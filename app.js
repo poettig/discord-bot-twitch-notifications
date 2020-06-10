@@ -10,7 +10,7 @@ const Stream = require('./models/Stream');
 const app = express();
 
 app.use('/streamUpdate/:userId', bodyParser.json(), async (req, res) => {
-    debug('webhook received', req.params.userId)
+    debug('Webhook received', req.params.userId);
     const userId = req.params.userId;
 
     if (req.query['hub.challenge']) {
@@ -52,12 +52,12 @@ async function checkStreams() {
         debug('verifying current webhook subs..');
         return twitchClient.getAllWebhooks()
     }).then((subs) => {
-        // debug('getting twitch streams by metadata')
+        debug('getting twitch streams by metadata')
         return twitchClient.getStreamsByMetadata(config.twitch.whitelist.gameIds, {
             tagIds: config.twitch.whitelist.tagIds,
             keywords: config.twitch.whitelist.keywords
         });
-    }) .then((streams) => {
+    }).then((streams) => {
         if (!streams.length) {
             debug('no active streams found with your search configuration');
             return;
@@ -76,5 +76,6 @@ async function checkStreams() {
 }
 
 app.listen(5001, () => {
+    // Start polling cycle when server came up
     checkStreams();
 });

@@ -93,7 +93,7 @@ module.exports = {
             updatedStream = stream;
         }
 
-        return dbTable().update(stream).where('user_id', updatedStream.user_id).returning('*');
+        return dbTable().update(stream).where('user_id', updatedStream.user_id);
     },
     /**
      * @param {ApplicationStream | TwitchStream | DatabaseStream} stream 

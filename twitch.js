@@ -10,22 +10,67 @@ const URL_BASE = 'https://api.twitch.tv/helix';
 
 let token;
 
-function apiRequest({ endpoint, payload = {}, method = "GET", urlBase = URL_BASE, responseType = 'json', headers = {} }) {
-    const compiledHeaders = { "Client-ID": twitchConfig.credentials.clientId, 'Content-Type': 'application/json', ...headers };
-    const params = method.toUpperCase() == 'GET' ? `?${qs.stringify(payload)}` : '';
+function apiRequest({
+    endpoint,
+    payload = {},
+    method = "GET",
+    urlBase = URL_BASE,
+    responseType = 'json',
+    headers = {},
+    retries = 1,
+    noauth = false
+}) {
 
-    // debug(`making api request to: ${urlBase}${endpoint}${params}`)
+    if (!noauth) {
+        headers["Authorization"] = 'Bearer ' + token;
+    }
+
+    const compiledHeaders = { "Client-ID": twitchConfig.credentials.clientId, 'Content-Type': 'application/json', ...headers };
+    const params = method.toUpperCase() === 'GET' ? `?${qs.stringify(payload)}` : '';
+
+    // debug(`API request to: ${urlBase}${endpoint}${params}`);
     return fetch(`${urlBase}${endpoint}${params}`, {
         method,
         headers: compiledHeaders,
         body: method.toUpperCase() === 'POST' ? JSON.stringify(payload) : undefined,
-    })
-    .then((res) => {
-        if (responseType === 'json') {
-            return res.json();
+    }).then((res) => {
+        if (res.status === 401) {
+            // Token most likely expired. Get a new one as client-credentials tokens can't be refreshed.
+            token = null;
+
+            if (retries === 0) {
+                console.log("API request failed with authentication failure.");
+                console.log(res);
+                process.exit(1);
+            }
+
+            throw new Error();
         } else {
-            return res.text();
+            // debug(`Quota left: ${res.headers.get("Ratelimit-Remaining")}`);
+            if (responseType === 'json') {
+                return res.json();
+            } else {
+                return res.text();
+            }
         }
+    }).then((value) => {
+        return value;
+    }, () => {
+        // Get new token and retry
+        debug("OAuth token expired.");
+        token = null;
+        ensureToken().then(() => {
+            // Retry. Exit condition is "retries == 0" two thens above.
+            return apiRequest({
+                endpoint,
+                payload,
+                method,
+                urlBase,
+                responseType,
+                headers,
+                retries: retries - 1
+            });
+        });
     });
 }
 
@@ -37,9 +82,10 @@ function ensureToken() {
         // @TODO: implement token expiration handling
         if (token) return token;
 
-        debug('no oauth token! getting a new one...');
+        debug('Requesting new OAuth token...');
         return apiRequest({
             endpoint: '/oauth2/token',
+            noauth: true,
             payload: {
                 client_id: twitchConfig.credentials.clientId,
                 client_secret: twitchConfig.credentials.clientSecret,
@@ -49,7 +95,7 @@ function ensureToken() {
             urlBase: 'https://id.twitch.tv',
         }).then(({ access_token }) => {
             token = access_token;
-            debug('successfully updated token');
+            debug('Successfully got OAuth token.');
             return token;
         });
     });
@@ -96,11 +142,11 @@ function getStreams(games = [], cursor, streams = []) {
     const gameIds = Array.isArray(games) ? games.join(',') : games;
     return apiRequest({ endpoint, payload: { first: 100, game_id: gameIds, after: cursor } })
         .then(({ data, pagination }) => {
-            // debug('data', data.length)
+            // debug('data', data.length);
             if (!data) return streams;
 
             const newStreams = streams.concat(data);
-            // debug('pagination', pagination)
+            // debug('pagination', pagination);
             if (pagination.cursor && data.length >= 100) {
                 return getStreams(games, pagination.cursor, newStreams);
             } else {
@@ -184,7 +230,7 @@ function getAllWebhooks() {
     return Promise.try(() => {
         return ensureToken();
     }).then(() => {
-        return apiRequest({ endpoint, headers: { Authorization: 'Bearer ' + token } });
+        return apiRequest({ endpoint });
     }).tap(subs => debug('subs: ', subs));
 }
 
