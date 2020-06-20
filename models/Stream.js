@@ -24,8 +24,18 @@ function subscribeToStream(stream) {
 function alertStream(stream) {
     return Promise.try(() => {
         if (stream.title && config.twitch.blacklist.keywords.some(kw => stream.title.toLowerCase().includes(kw.toLocaleLowerCase()))) {
-            debug(`blacklisted keyword found, suppressing alert for user ${stream.user_id} ${stream.user_name}`);
+            debug(`Blacklisted keyword found, suppressing alert for user ${stream.user_id} ${stream.user_name}`);
             throw new Error('stream contains blacklisted keyword');
+        }
+
+        if (stream.tag_ids && config.twitch.blacklist.tagIds.some(tag => stream.tag_ids.includes(tag))) {
+            debug(`Blacklisted tag found, suppressing alert for user ${stream.user_id} ${stream.user_name}`);
+            throw new Error('stream contains blacklisted tag');
+        }
+
+        if (stream.user_id && config.twitch.blacklist.userIds.includes(stream.user_id)) {
+            debug(`Blacklisted user ${stream.user_id} ${stream.user_name}, suppressing alert.`);
+            throw new Error('stream from blacklisted user');
         }
         return discordBot.newStreamAlert(stream);
     });
@@ -100,12 +110,6 @@ module.exports = {
      */
     isWhitelisted(stream) {
         return config.twitch.whitelist.userIds.includes(stream.user_id);
-    },
-    /**
-     * @param {ApplicationStream} stream 
-     */
-    isBlacklisted(stream) {
-        return config.twitch.blacklist.userIds.includes(stream.user_id);
     },
     /**
      * @param {DatabaseStream} stream 
