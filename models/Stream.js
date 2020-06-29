@@ -23,11 +23,13 @@ function subscribeToStream(stream) {
  */
 function alertStream(stream) {
     return Promise.try(() => {
+        debug(`Checking title for blacklisted keywords: '${stream.title.toLowerCase()}'...`);
         if (stream.title && config.twitch.blacklist.keywords.some(kw => stream.title.toLowerCase().includes(kw.toLocaleLowerCase()))) {
             debug(`Blacklisted keyword found, suppressing alert for user ${stream.user_id} ${stream.user_name}`);
             throw new Error('stream contains blacklisted keyword');
         }
 
+        debug(`Checking for blacklisted tags: '${stream.tag_ids}'...`);
         if (stream.tag_ids && config.twitch.blacklist.tagIds.some(tag => stream.tag_ids.includes(tag))) {
             debug(`Blacklisted tag found, suppressing alert for user ${stream.user_id} ${stream.user_name}`);
             throw new Error('stream contains blacklisted tag');
