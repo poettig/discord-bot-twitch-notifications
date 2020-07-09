@@ -28,6 +28,7 @@ declare interface TwitchStream {
 declare interface ApplicationStream extends TwitchStream {
     isLive: boolean
     lastShoutOut: Date
+    offline_since: Date
 }
 
 declare interface DatabaseStream extends Omit<ApplicationStream, "id"> {

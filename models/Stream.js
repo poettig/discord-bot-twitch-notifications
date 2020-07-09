@@ -57,6 +57,8 @@ function convertToDStream(istream) {
         // @ts-ignore
         lastShoutOut: istream.lastShoutOut != null ? istream.lastShoutOut : null,
         stream_id: id,
+        // @ts-ignore
+        offline_since: istream.offline_since != null ? istream.offline_since : null
     }
     return databaseStream;
 }
@@ -72,7 +74,7 @@ module.exports = {
         return dbTable().update('isLive', true).where('user_id', userId);
     },
     setEnded(userId) {
-        return dbTable().update('isLive', false).where('user_id', userId);
+        return dbTable().update({isLive: false, offline_since: new Date()}).where('user_id', userId);
     },
     /**
      * @returns {Promise<DatabaseStream>} 
@@ -119,22 +121,24 @@ module.exports = {
      */
     async goneLive(stream, update) {
         debug(`Existing stream, seen newly live: user ${stream.user_id} ${stream.user_name}`);
-        const updatedStream = { ...stream, ...(convertToDStream(update)), isLive: true, lastShoutOut: stream.lastShoutOut };
-        const lastShoutOutAgeMinutes = differenceInMinutes(new Date(), updatedStream.lastShoutOut);
+        const updatedStream = { ...stream, ...(convertToDStream(update)), isLive: true, lastShoutOut: stream.lastShoutOut, offline_since: stream.offline_since };
         const lastShoutOutAgeHours = differenceInHours(new Date(), updatedStream.lastShoutOut);
+        const offlineSinceMinutes = updatedStream.offline_since !== null ? differenceInMinutes(new Date(), updatedStream.offline_since) : null;
 
-        if (lastShoutOutAgeMinutes >= 0 && lastShoutOutAgeMinutes < config.thresholds.reconnect_minutes) {
-            debug(`Stream was already s/o ${lastShoutOutAgeMinutes} minutes ago - probably just a reconnect, suppressing shoutout for user ${stream.user_id} ${stream.user_name}`)
-        } else if (lastShoutOutAgeMinutes >= 0 && lastShoutOutAgeHours < config.thresholds.shoutout_hours && !this.isWhitelisted(updatedStream)) {
-            debug(`Stream was already s/o ${lastShoutOutAgeHours} hours ago - suppressing shoutout for user ${stream.user_id} ${stream.user_name}`);
+        if (offlineSinceMinutes !== null && offlineSinceMinutes < config.thresholds.reconnect_minutes) {
+            debug(`Stream went offline ${offlineSinceMinutes} minutes ago - probably just a reconnect, suppressing shoutout for user ${stream.user_id} ${stream.user_name}`)
+        } else if (lastShoutOutAgeHours !== null && lastShoutOutAgeHours >= 0 && lastShoutOutAgeHours < config.thresholds.shoutout_hours && !this.isWhitelisted(updatedStream)) {
+            debug(`Stream was already shouted out ${lastShoutOutAgeHours} hours ago - suppressing shoutout for user ${stream.user_id} ${stream.user_name}`);
         } else {
             let firstPart;
             if (this.isWhitelisted(updatedStream)) {
                 firstPart = `User is in the whitelist`;
-            } else if (lastShoutOutAgeMinutes < 0) {
-                firstPart = `Last s/o was a negative number of minutes ago (${lastShoutOutAgeMinutes})`;
+            } else if (lastShoutOutAgeHours === null) {
+                firstPart = `Last shoutout is not set`
+            } else if (lastShoutOutAgeHours < 0) {
+                firstPart = `Last shoutout was a negative number of hours ago (${lastShoutOutAgeHours})`;
             } else {
-                firstPart = `Last s/o was ${lastShoutOutAgeHours} hours ago, which is over threshold`;
+                firstPart = `Last shoutout was ${lastShoutOutAgeHours} hours ago, which is over threshold`;
             }
             debug(`${firstPart} - shouting out stream for user ${stream.user_id} ${stream.user_name}`);
             try {
@@ -154,7 +158,7 @@ module.exports = {
     async addNew(stream) {
         debug(`stream for user ${stream.user_id} ${stream.user_name} has never been parsed before! storing internal reference...`);
         debug(`shouting out stream for new user ${stream.user_id} ${stream.user_name}`);
-            const newStream = { ...stream, isLive: true, lastShoutOut: null };
+            const newStream = { ...stream, isLive: true, lastShoutOut: null, offline_since: null };
             try {
                 await alertStream(newStream);
                 newStream.lastShoutOut = new Date();
