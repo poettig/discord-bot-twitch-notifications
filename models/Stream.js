@@ -120,17 +120,17 @@ module.exports = {
     async goneLive(stream, update) {
         debug(`Existing stream, seen newly live: user ${stream.user_id} ${stream.user_name}`);
         const updatedStream = { ...stream, ...(convertToDStream(update)), isLive: true, lastShoutOut: stream.lastShoutOut };
-        const lastShoutOutAgeMinutes = differenceInMinutes(updatedStream.lastShoutOut, new Date());
-        const lastShoutOutAgeHours = differenceInHours(updatedStream.lastShoutOut, new Date());
+        const lastShoutOutAgeMinutes = differenceInMinutes(new Date(), updatedStream.lastShoutOut);
+        const lastShoutOutAgeHours = differenceInHours(new Date(), updatedStream.lastShoutOut);
 
         if (lastShoutOutAgeMinutes >= 0 && lastShoutOutAgeMinutes < config.thresholds.reconnect_minutes) {
             debug(`Stream was already s/o ${lastShoutOutAgeMinutes} minutes ago - probably just a reconnect, suppressing shoutout for user ${stream.user_id} ${stream.user_name}`)
-        } else if (lastShoutOutAgeHours < config.thresholds.shoutout_hours && !this.isWhitelisted(updatedStream)) {
+        } else if (lastShoutOutAgeMinutes >= 0 && lastShoutOutAgeHours < config.thresholds.shoutout_hours && !this.isWhitelisted(updatedStream)) {
             debug(`Stream was already s/o ${lastShoutOutAgeHours} hours ago - suppressing shoutout for user ${stream.user_id} ${stream.user_name}`);
         } else {
             let firstPart;
             if (this.isWhitelisted(updatedStream)) {
-                firstPart = `User is in the whitelist`
+                firstPart = `User is in the whitelist`;
             } else if (lastShoutOutAgeMinutes < 0) {
                 firstPart = `Last s/o was a negative number of minutes ago (${lastShoutOutAgeMinutes})`;
             } else {
@@ -146,7 +146,7 @@ module.exports = {
         }
 
         subscribeToStream(updatedStream);
-        return this.update(updatedStream)
+        return this.update(updatedStream);
     },
     /**
      * @param {TwitchStream} stream 
