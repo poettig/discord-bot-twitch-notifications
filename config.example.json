@@ -5,6 +5,10 @@
         "connection": "./db.sqlite3",
         "useNullAsDefault": true
     },
+    "thresholds": {
+        "reconnect_minutes": 60,
+        "shoutout_hours": 90
+    },
     "twitch": {
         "whitelist": {
             "keywords": ["any%", "any %", "speedrun", "speed run", "default settings"],

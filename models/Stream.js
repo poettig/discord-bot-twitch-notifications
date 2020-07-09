@@ -1,6 +1,6 @@
 const debug = require('debug')('speedbot:stream');
 const Promise = require('bluebird');
-const { differenceInHours } = require('date-fns');
+const { differenceInMinutes, differenceInHours } = require('date-fns');
 const config = require('../config.json');
 const db = require('../connection');
 const twitchClient = require('../twitch');
@@ -120,18 +120,29 @@ module.exports = {
     async goneLive(stream, update) {
         debug(`Existing stream, seen newly live: user ${stream.user_id} ${stream.user_name}`);
         const updatedStream = { ...stream, ...(convertToDStream(update)), isLive: true, lastShoutOut: stream.lastShoutOut };
-        const lastShoutOutAge = Math.abs(differenceInHours(updatedStream.lastShoutOut, new Date()));
-        
-        if (lastShoutOutAge >= 90 || Number.isNaN(lastShoutOutAge) || this.isWhitelisted(updatedStream)) {
-            debug(`Last s/o was ${lastShoutOutAge} hours ago, which is over threshold (or user is whitelisted) - shouting out stream for user ${stream.user_id} ${stream.user_name}`);
+        const lastShoutOutAgeMinutes = differenceInMinutes(updatedStream.lastShoutOut, new Date());
+        const lastShoutOutAgeHours = differenceInHours(updatedStream.lastShoutOut, new Date());
+
+        if (lastShoutOutAgeMinutes >= 0 && lastShoutOutAgeMinutes < config.thresholds.reconnect_minutes) {
+            debug(`Stream was already s/o ${lastShoutOutAgeMinutes} minutes ago - probably just a reconnect, suppressing shoutout for user ${stream.user_id} ${stream.user_name}`)
+        } else if (lastShoutOutAgeHours < config.thresholds.shoutout_hours && !this.isWhitelisted(updatedStream)) {
+            debug(`Stream was already s/o ${lastShoutOutAgeHours} hours ago - suppressing shoutout for user ${stream.user_id} ${stream.user_name}`);
+        } else {
+            let firstPart;
+            if (this.isWhitelisted(updatedStream)) {
+                firstPart = `User is in the whitelist`
+            } else if (lastShoutOutAgeMinutes < 0) {
+                firstPart = `Last s/o was a negative number of minutes ago (${lastShoutOutAgeMinutes})`;
+            } else {
+                firstPart = `Last s/o was ${lastShoutOutAgeHours} hours ago, which is over threshold`;
+            }
+            debug(`${firstPart} - shouting out stream for user ${stream.user_id} ${stream.user_name}`);
             try {
                 await alertStream(updatedStream);
                 updatedStream.lastShoutOut = new Date();
             } catch (e) {
                 debug(`unable to trigger alert for ${stream.user_id} ${stream.user_name}`)
             }
-        } else {
-            debug(`Stream was already s/o ${lastShoutOutAge} hours ago - suppressing shoutout for user ${stream.user_id} ${stream.user_name}`);
         }
 
         subscribeToStream(updatedStream);
