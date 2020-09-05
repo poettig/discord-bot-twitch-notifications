@@ -7,12 +7,6 @@ const client = new Discord.Client();
 
 client.on('ready', () => {
     debug(`Logged in as ${client.user.tag}`);
-    newStreamAlert({
-        user_id: 269398829,
-        user_name: '공쟝쟝_',
-        title: "_**T~~est Title LUL~~**_",
-        thumbnail_url: 'https://static-cdn.jtvnw.net/previews-ttv/live_user__yukinyaa_-{width}x{height}.jpg'
-    });
 });
 
 client.login(discordConfig.credentials.botToken);
