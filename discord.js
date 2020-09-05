@@ -7,6 +7,12 @@ const client = new Discord.Client();
 
 client.on('ready', () => {
     debug(`Logged in as ${client.user.tag}`);
+    newStreamAlert({
+        user_id: 269398829,
+        user_name: '공쟝쟝_',
+        title: "_**T~~est Title LUL~~**_",
+        thumbnail_url: 'https://static-cdn.jtvnw.net/previews-ttv/live_user__yukinyaa_-{width}x{height}.jpg'
+    });
 });
 
 client.login(discordConfig.credentials.botToken);
@@ -41,22 +47,37 @@ function getAllTextChannels(channels) {
     ).filter(channel => channel.name === 'general');
 }
 
-function newStreamAlert(data) {
-    let welcomeMessage;
+function escapeMarkdown(string) {
+    return string.replace(/[*_~]/gi, "\\$&");
+}
 
+function newStreamAlert(data) {
+    // Parse username from thumbnail_url as "data.user_name" is the display name, not the login name necessary for a twitch URL
+    let username;
+    let match = data.thumbnail_url.match(/^.*live_user_(.*)-.*$/);
+    if (match) {
+        username = match[1];
+    } else {
+        username = data.user_name;
+    }
+
+    // Replace markdown formatters in title and display_name
+    let title = escapeMarkdown(data.title);
+    let display_name = escapeMarkdown(data.user_name)
+
+    let welcomeMessage;
     if (data.user_id === '72692222') {
         welcomeMessage = '@here We are Live!';
     } else {
-        welcomeMessage = `${data.user_name} is live!`;
+        welcomeMessage = `${display_name} is live!`;
     }
 
-    /* 
-     * the zero width space unicode character is necessary to start the payload on the second line
-     * because discord otherwise eats any sort of line break at the start of a message
-     */
-    const payload =`\u200B
-${welcomeMessage} - "${data.title}"
-https://www.twitch.tv/${data.user_name}`;
+    let url = `https://www.twitch.tv/${username}`;
+    if (data.user_id !== '72692222') {
+        url = `<${url}>`;
+    }
+
+    let payload = `${welcomeMessage} - "${title}"\n${url}`;
 
     // allows for filtering to a specific configured discord guild, that can be used to "test" when NODE_ENV=test
     if (process.env.NODE_ENV === 'test') {
