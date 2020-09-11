@@ -71,7 +71,7 @@ function newStreamAlert(data) {
         url = `<${url}>`;
     }
 
-    let payload = `${welcomeMessage} - "${title}"\n${url}`;
+    let payload = `> ${welcomeMessage} - "${title}"\n> ${url}`;
 
     // allows for filtering to a specific configured discord guild, that can be used to "test" when NODE_ENV=test
     if (process.env.NODE_ENV === 'test') {
