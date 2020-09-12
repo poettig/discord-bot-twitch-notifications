@@ -1,6 +1,7 @@
 const debug = require('debug')('speedbot:discord');
 const Promise = require('bluebird');
 const discordConfig = require('./config.json').discord;
+const whitelist = require('./config.json').twitch.whitelist;
 
 const Discord = require('discord.js');
 const client = new Discord.Client();
@@ -56,8 +57,8 @@ function newStreamAlert(data) {
     }
 
     // Replace markdown formatters in title and display_name
-    let title = escapeMarkdown(data.title);
-    let display_name = escapeMarkdown(data.user_name)
+    let title = escapeMarkdown(data.title).replace(/[\n\r]/g, "");
+    let display_name = escapeMarkdown(data.user_name);
 
     let welcomeMessage;
     if (data.user_id === '72692222') {
@@ -67,7 +68,7 @@ function newStreamAlert(data) {
     }
 
     let url = `https://www.twitch.tv/${username}`;
-    if (data.user_id !== '72692222') {
+    if (!whitelist.userIds.includes(data.user_id)) {
         url = `<${url}>`;
     }
 
