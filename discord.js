@@ -42,7 +42,7 @@ function getAllTextChannels(channels) {
 }
 
 function escapeMarkdown(string) {
-    return string.replace(/[*_~]/gi, "\\$&");
+    return string.replace(/[<>*_~]/gi, "\\$&");
 }
 
 function newStreamAlert(data) {
