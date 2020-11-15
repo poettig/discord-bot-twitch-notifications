@@ -70,6 +70,7 @@ async function checkStreams() {
             },
             (error) => {
                 debug(`Error updating a stream:\n${error}`);
+                process.exit(-1);
             }
         );
     }).catch({ code: 'ECONNREFUSED' }, (err) => {
