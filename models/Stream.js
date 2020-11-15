@@ -145,7 +145,7 @@ module.exports = {
                 await alertStream(updatedStream);
                 updatedStream.lastShoutOut = new Date();
             } catch (e) {
-                debug(`unable to trigger alert for ${stream.user_id} ${stream.user_name}`)
+                debug(`unable to trigger alert for ${stream.user_id} ${stream.user_name}: ${e}`)
             }
         }
 
@@ -163,7 +163,7 @@ module.exports = {
                 await alertStream(newStream);
                 newStream.lastShoutOut = new Date();
             } catch (e) {
-                debug(`unable to trigger alert for ${stream.user_id} ${stream.user_name}`)
+                debug(`unable to trigger alert for ${stream.user_id} ${stream.user_name}: ${e}`)
             } finally {
                 subscribeToStream(newStream);
             }

@@ -36,7 +36,7 @@ client.once('error', reattemptLogin);
  * @returns {Array<Discord.TextChannel>}
  */
 function getAllTextChannels(channels) {
-    return Array.from(channels.values()).filter(
+    return Array.from(channels.cache.values()).filter(
         /** @returns {channel is Discord.TextChannel} */
         channel => channel.type === 'text'
     ).filter(channel => channel.name === 'general');

@@ -64,7 +64,14 @@ async function checkStreams() {
         }
 
         debug(`${streams.length} active stream(s) found with your search configuration, validating for actions....`);
-        return validateStreams(streams);
+        return validateStreams(streams).then(
+            () => {
+                // Do nothing on success.
+            },
+            (error) => {
+                debug(`Error updating a stream:\n${error}`);
+            }
+        );
     }).catch({ code: 'ECONNREFUSED' }, (err) => {
         // being rate limited by twitch... let's let it calm down a bit extra...
         debug('Twitch refused API request (likly due to rate limit) - waiting an additional 30 seconds');
