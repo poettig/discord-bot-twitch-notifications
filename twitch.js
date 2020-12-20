@@ -1,4 +1,4 @@
-const debug = require('debug')('speedbot:twitch');
+const log = require('./log.js').createLogger("twitch", process.env.LEVEL_TWITCH);
 const Promise = require('bluebird');
 const qs = require('querystring');
 const fetch = require('node-fetch');
@@ -28,7 +28,7 @@ function apiRequest({
     const compiledHeaders = { "Client-ID": twitchConfig.credentials.clientId, 'Content-Type': 'application/json', ...headers };
     const params = method.toUpperCase() === 'GET' ? `?${qs.stringify(payload)}` : '';
 
-    // debug(`API request to: ${urlBase}${endpoint}${params}`);
+    log.debug(`API request to: ${urlBase}${endpoint}${params}`);
     return fetch(`${urlBase}${endpoint}${params}`, {
         method,
         headers: compiledHeaders,
@@ -39,14 +39,14 @@ function apiRequest({
             token = null;
 
             if (retries === 0) {
-                console.log("API request failed with authentication failure.");
-                console.log(res);
+                log.error("API request failed with authentication failure.");
+                log.info(res);
                 process.exit(1);
             }
 
             throw new Error();
         } else {
-            // debug(`Quota left: ${res.headers.get("Ratelimit-Remaining")}`);
+            log.debug(`Quota left: ${res.headers.get("Ratelimit-Remaining")}`);
             if (responseType === 'json') {
                 return res.json();
             } else {
@@ -57,7 +57,7 @@ function apiRequest({
         return value;
     }, () => {
         // Get new token and retry
-        debug("OAuth token expired.");
+        log.info("OAuth token expired, getting a new one...");
         token = null;
         ensureToken().then(() => {
             // Retry. Exit condition is "retries == 0" two thens above.
@@ -82,7 +82,7 @@ function ensureToken() {
         // @TODO: implement token expiration handling
         if (token) return token;
 
-        debug('Requesting new OAuth token...');
+        log.debug('Requesting new OAuth token...');
         return apiRequest({
             endpoint: '/oauth2/token',
             noauth: true,
@@ -95,7 +95,7 @@ function ensureToken() {
             urlBase: 'https://id.twitch.tv',
         }).then(({ access_token }) => {
             token = access_token;
-            debug('Successfully got OAuth token.');
+            log.debug('Successfully got OAuth token.');
             return token;
         });
     });
@@ -142,11 +142,9 @@ function getStreams(games = [], cursor, streams = []) {
     const gameIds = Array.isArray(games) ? games.join(',') : games;
     return apiRequest({ endpoint, payload: { first: 100, game_id: gameIds, after: cursor } })
         .then(({ data, pagination }) => {
-            // debug('data', data.length);
             if (!data) return streams;
 
             const newStreams = streams.concat(data);
-            // debug('pagination', pagination);
             if (pagination.cursor && data.length >= 100) {
                 return getStreams(games, pagination.cursor, newStreams);
             } else {
@@ -188,7 +186,6 @@ function getStreamsByMetadata(gameIds, { tagIds, keywords }) {
         getStreamsByTagId(gameIds, tagIds),
         getStreamsByKeywords(gameIds, keywords),
     ]).then(([ taggedStreams, kwStreams ]) => {
-        // debug('received tagged and kw streams, fitlering...')
         // dedupe streams that are in both groups, while merging them
         return [...taggedStreams, ...kwStreams].reduce((streams, stream) => {
             if (streams.find(s => s.id === stream.id)) {
@@ -213,7 +210,7 @@ function streamWebhookRequest(userId, mode) {
         },
         method: 'post',
         responseType: 'text',
-    }).then(console.log);
+    }).then(log.debug);
 }
 
 function subscribeToUserStream(userId) {
@@ -231,7 +228,7 @@ function getAllWebhooks() {
         return ensureToken();
     }).then(() => {
         return apiRequest({ endpoint });
-    }).tap(subs => debug('subs: ', subs));
+    }).tap(subs => log.debug('API Subscriptions: ', subs));
 }
 
 function getUserId(username) {

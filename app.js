@@ -1,5 +1,4 @@
-///<reference path="./twitch.js" />
-const debug = require('debug')('speedbot:app');
+const log = require('./log.js').createLogger("app", process.env.LEVEL_APP)
 const Promise = require('bluebird');
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -10,20 +9,20 @@ const Stream = require('./models/Stream');
 const app = express();
 
 app.use('/streamUpdate/:userId', bodyParser.json(), async (req, res) => {
-    debug('Webhook received', req.params.userId);
+    log.debug('Webhook received', req.params.userId);
     const userId = req.params.userId;
 
     if (req.query['hub.challenge']) {
-        debug(`verification request received on webhook for user ${userId} with challenge ${req.query['hub.challenge']}`);
+        log.debug(`Verification request received on webhook for user ${userId} with challenge ${req.query['hub.challenge']}`);
         return res.send(req.query['hub.challenge']);
     }
 
     if (Array.isArray(req.body.data) && !req.body.data.length) {
-        debug(`end of stream webhook came in for user id ${userId}, unsubscribing...`);
+        log.debug(`End of stream webhook came in for user id ${userId}, unsubscribing...`);
         await Stream.setEnded(userId);
         return twitchClient.unsubscribeFromUserStream(userId).then(() => res.sendStatus(200));
     } else {
-        debug(`non-empty webhook came in for user id ${userId}, leaving alone`);
+        log.debug(`Non-empty webhook came in for user id ${userId}, leaving alone`);
     }
 
     return res.sendStatus(200);
@@ -49,33 +48,33 @@ function validateStreams(streams) {
 
 async function checkStreams() {
     return Promise.try(() => {
-        debug('verifying current webhook subs..');
+        log.debug('Verifying current webhook subs...');
         return twitchClient.getAllWebhooks()
     }).then((subs) => {
-        debug('getting twitch streams by metadata')
+        log.debug('Getting twitch streams by metadata...')
         return twitchClient.getStreamsByMetadata(config.twitch.whitelist.gameIds, {
             tagIds: config.twitch.whitelist.tagIds,
             keywords: config.twitch.whitelist.keywords
         });
     }).then((streams) => {
         if (!streams.length) {
-            debug('no active streams found with your search configuration');
+            log.debug('no active streams found with your search configuration');
             return;
         }
 
-        debug(`${streams.length} active stream(s) found with your search configuration, validating for actions....`);
+        log.debug(`${streams.length} active stream(s) found with your search configuration, validating for actions....`);
         return validateStreams(streams).then(
             () => {
                 // Do nothing on success.
             },
             (error) => {
-                debug(`Error updating a stream:\n${error}`);
+                log.error(`Error updating a stream:\n${error}`);
                 process.exit(-1);
             }
         );
     }).catch({ code: 'ECONNREFUSED' }, (err) => {
         // being rate limited by twitch... let's let it calm down a bit extra...
-        debug('Twitch refused API request (likly due to rate limit) - waiting an additional 30 seconds');
+        log.warn('Twitch refused API request (likly due to rate limit) - waiting an additional 30 seconds');
         return Promise.delay(30000);
     }).finally(() => {
         // debug('polling cycle done, waiting 30s ...')

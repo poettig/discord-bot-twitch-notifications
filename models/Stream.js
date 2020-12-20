@@ -1,4 +1,4 @@
-const debug = require('debug')('speedbot:stream');
+const log = require('../log.js').createLogger("stream", process.env.LEVEL_STREAM);
 const Promise = require('bluebird');
 const { differenceInMinutes, differenceInHours } = require('date-fns');
 const config = require('../config.json');
@@ -14,7 +14,7 @@ function dbTable() {
 }
 
 function subscribeToStream(stream) {
-    debug(`subscribing to webhook for user ${stream.user_id} ${stream.user_name}...`);
+    log.info(`subscribing to webhook for user ${stream.user_id} ${stream.user_name}...`);
     twitchClient.subscribeToUserStream(stream.user_id);
 }
 
@@ -23,21 +23,21 @@ function subscribeToStream(stream) {
  */
 function alertStream(stream) {
     return Promise.try(() => {
-        debug(`Checking title for blacklisted keywords: '${stream.title.toLowerCase()}'...`);
+        log.debug(`Checking title for denylisted keywords: '${stream.title.toLowerCase()}'...`);
         if (stream.title && config.twitch.blacklist.keywords.some(kw => stream.title.toLowerCase().includes(kw.toLocaleLowerCase()))) {
-            debug(`Blacklisted keyword found, suppressing alert for user ${stream.user_id} ${stream.user_name}`);
-            throw new Error('stream contains blacklisted keyword');
+            log.info(`Denylisted keyword found, suppressing alert for user ${stream.user_id} ${stream.user_name}`);
+            return;
         }
 
-        debug(`Checking for blacklisted tags: '${stream.tag_ids}'...`);
+        log.debug(`Checking for denylisted tags: '${stream.tag_ids}'...`);
         if (stream.tag_ids && config.twitch.blacklist.tagIds.some(tag => stream.tag_ids.includes(tag))) {
-            debug(`Blacklisted tag found, suppressing alert for user ${stream.user_id} ${stream.user_name}`);
-            throw new Error('stream contains blacklisted tag');
+            log.info(`Denylisted tag found, suppressing alert for user ${stream.user_id} ${stream.user_name}`);
+            return;
         }
 
         if (stream.user_id && config.twitch.blacklist.userIds.includes(stream.user_id)) {
-            debug(`Blacklisted user ${stream.user_id} ${stream.user_name}, suppressing alert.`);
-            throw new Error('stream from blacklisted user');
+            log.info(`Denylisted user ${stream.user_id} ${stream.user_name}, suppressing alert.`);
+            return;
         }
         return discordBot.newStreamAlert(stream);
     });
@@ -50,7 +50,7 @@ function alertStream(stream) {
  */
 function convertToDStream(istream) {
     const { id, ...dStream } = istream;
-    const databaseStream = {
+    return {
         ...dStream,
         // @ts-ignore
         isLive: istream.isLive != null ? istream.isLive : null,
@@ -59,8 +59,7 @@ function convertToDStream(istream) {
         stream_id: id,
         // @ts-ignore
         offline_since: istream.offline_since != null ? istream.offline_since : null
-    }
-    return databaseStream;
+    };
 }
 
 module.exports = {
@@ -88,7 +87,7 @@ module.exports = {
      * @returns {Promise<ApplicationStream>}
      */
     async create(stream) {
-        debug(`creating new record for ${stream.user_id} ${stream.user_name} in db...`)
+        log.debug(`creating new record for ${stream.user_id} ${stream.user_name} in db...`)
         return dbTable().insert(convertToDStream(stream));
     },
         /**
@@ -99,7 +98,7 @@ module.exports = {
      */
     async update(stream, update) {
         let updatedStream;
-        debug(`stream of user ${stream.user_id} ${stream.user_name} being updated`);
+        log.debug(`stream of user ${stream.user_id} ${stream.user_name} being updated...`);
 
         if (update) {
             updatedStream = { ...stream, ...convertToDStream(update) };
@@ -112,7 +111,7 @@ module.exports = {
     /**
      * @param {ApplicationStream | TwitchStream | DatabaseStream} stream 
      */
-    isWhitelisted(stream) {
+    isAllowlisted(stream) {
         return config.twitch.whitelist.userIds.includes(stream.user_id);
     },
     /**
@@ -120,19 +119,19 @@ module.exports = {
      * @param {TwitchStream} update 
      */
     async goneLive(stream, update) {
-        debug(`Existing stream, seen newly live: user ${stream.user_id} ${stream.user_name}`);
+        log.info(`Existing stream, seen newly live: user ${stream.user_id} ${stream.user_name}`);
         const updatedStream = { ...stream, ...(convertToDStream(update)), isLive: true, lastShoutOut: stream.lastShoutOut, offline_since: stream.offline_since };
         const lastShoutOutAgeHours = differenceInHours(new Date(), updatedStream.lastShoutOut);
         const offlineSinceMinutes = updatedStream.offline_since !== null ? differenceInMinutes(new Date(), updatedStream.offline_since) : null;
 
         if (offlineSinceMinutes !== null && offlineSinceMinutes < config.thresholds.reconnect_minutes) {
-            debug(`Stream went offline ${offlineSinceMinutes} minutes ago - probably just a reconnect, suppressing shoutout for user ${stream.user_id} ${stream.user_name}`)
-        } else if (lastShoutOutAgeHours !== null && lastShoutOutAgeHours >= 0 && lastShoutOutAgeHours < config.thresholds.shoutout_hours && !this.isWhitelisted(updatedStream)) {
-            debug(`Stream was already shouted out ${lastShoutOutAgeHours} hours ago - suppressing shoutout for user ${stream.user_id} ${stream.user_name}`);
+            log.info(`Stream went offline ${offlineSinceMinutes} minutes ago - probably just a reconnect, suppressing shoutout for user ${stream.user_id} ${stream.user_name}`)
+        } else if (lastShoutOutAgeHours !== null && lastShoutOutAgeHours >= 0 && lastShoutOutAgeHours < config.thresholds.shoutout_hours && !this.isAllowlisted(updatedStream)) {
+            log.info(`Stream was already shouted out ${lastShoutOutAgeHours} hours ago - suppressing shoutout for user ${stream.user_id} ${stream.user_name}`);
         } else {
             let firstPart;
-            if (this.isWhitelisted(updatedStream)) {
-                firstPart = `User is in the whitelist`;
+            if (this.isAllowlisted(updatedStream)) {
+                firstPart = `User is in the allowlist`;
             } else if (lastShoutOutAgeHours === null) {
                 firstPart = `Last shoutout is not set`
             } else if (lastShoutOutAgeHours < 0) {
@@ -140,12 +139,12 @@ module.exports = {
             } else {
                 firstPart = `Last shoutout was ${lastShoutOutAgeHours} hours ago, which is over threshold`;
             }
-            debug(`${firstPart} - shouting out stream for user ${stream.user_id} ${stream.user_name}`);
+            log.info(`${firstPart} - shouting out stream for user ${stream.user_id} ${stream.user_name}`);
             try {
                 await alertStream(updatedStream);
                 updatedStream.lastShoutOut = new Date();
             } catch (e) {
-                debug(`unable to trigger alert for ${stream.user_id} ${stream.user_name}: ${e}`)
+                log.error(`Unable to trigger alert for ${stream.user_id} ${stream.user_name}: ${e}`);
             }
         }
 
@@ -156,14 +155,14 @@ module.exports = {
      * @param {TwitchStream} stream 
      */
     async addNew(stream) {
-        debug(`stream for user ${stream.user_id} ${stream.user_name} has never been parsed before! storing internal reference...`);
-        debug(`shouting out stream for new user ${stream.user_id} ${stream.user_name}`);
+        log.debug(`stream for user ${stream.user_id} ${stream.user_name} has never been parsed before! storing internal reference...`);
+        log.info(`shouting out stream for new user ${stream.user_id} ${stream.user_name}`);
             const newStream = { ...stream, isLive: true, lastShoutOut: null, offline_since: null };
             try {
                 await alertStream(newStream);
                 newStream.lastShoutOut = new Date();
             } catch (e) {
-                debug(`unable to trigger alert for ${stream.user_id} ${stream.user_name}: ${e}`)
+                log.error(`Unable to trigger alert for ${stream.user_id} ${stream.user_name}: ${e}`)
             } finally {
                 subscribeToStream(newStream);
             }
