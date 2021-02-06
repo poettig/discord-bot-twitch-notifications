@@ -248,9 +248,6 @@ async function checkSRC() {
 
         });
     }).finally(() => {
-        setTimeout(() => {
-            Discord.sendMessage("Hello, I'm reporting here now.", TARGET_CHANNEL);
-        }, 2000);
         return Promise.delay(INTERVAL).then(() => checkSRC());
     });
 }
