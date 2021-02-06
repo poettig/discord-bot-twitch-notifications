@@ -142,9 +142,8 @@ async function checkSRC() {
             return fetchAllFromSRCURL(URL, limit);
     }).then((runs) => {
         twitchClient.ensureToken().then(() => {
-            if (runs.length > 0) {
-                log.info(`Scanning ${runs.length} runs for invalid video proof.`);
-            }
+            let logMsg = `Scanning ${runs.length} runs for invalid video proof.`;
+            runs.length > 0 ? log.info(logMsg) : log.debug(logMsg);
 
             function sendMessageWithRunInformation(run, prefix) {
                 let message = prefix;
