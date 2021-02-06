@@ -127,6 +127,7 @@ async function checkSRC() {
     const INTERVAL = 60 * 60 * 1000; // Each hour.
     const URL = "https://www.speedrun.com/api/v1/runs?game=9d35xw1l&orderby=date&direction=desc&embed=category,players";
     const TARGET_CHANNEL = "⛔moderator-chat";
+    const GAME_ID = "9d35xw1l";
 
     db("src").select().orderBy("internal_id", "desc").first().then((row) => {
         if (row == null) {
@@ -145,11 +146,21 @@ async function checkSRC() {
                 log.info(`Scanning ${runs.length} runs for invalid video proof.`);
             }
 
-            function sendMessage(run, prefix) {
+            function sendMessageWithRunInformation(run, prefix) {
                 let message = prefix;
+
+                let players = [];
+                run["players"]["data"].forEach((player) => {
+                    if (player["rel"] === "guest") {
+                        players.push(player["name"]);
+                    } else {
+                        players.push(player["names"]["international"]);
+                    }
+                });
+
                 message += `${run["category"]["data"]["name"]} run`;
                 message += ` in ${run["times"]["primary"].substring(2)}`;
-                message += ` by ${run["players"]["data"][0]["names"]["international"]}.\n`;
+                message += ` by ${players.join(", ")}.\n`;
                 message += `Submission from ${run["submitted"]}\n`;
                 message += `Link: <${run["weblink"]}>\n`;
                 Discord.sendMessage(message, TARGET_CHANNEL);
@@ -174,7 +185,7 @@ async function checkSRC() {
                             if (data === 404) {
                                 // The video is offline.
                                 let prefix = "Found offline video proof (Twitch returned 404).\n";
-                                sendMessage(run, prefix);
+                                sendMessageWithRunInformation(run, prefix);
                                 return;
                             }
 
@@ -193,10 +204,46 @@ async function checkSRC() {
 
                             if (data[0]["type"] === "archive") {
                                 let prefix = "Found run that has an auto-archived twitch VOD as proof.\n";
-                                sendMessage(run, prefix);
+                                sendMessageWithRunInformation(run, prefix);
                             }
                         });
                     }
+
+                    // Check if the run is from a new speedrunner (first game submission)
+                    run["players"]["data"].forEach((player) => {
+                        let playerName = player["rel"] === "guest" ? player["name"] : player["names"]["international"];
+
+                        player["links"].forEach((link) => {
+                            if (link["rel"] !== "runs") {
+                                return;
+                            }
+
+                            fetch(link["uri"]).then((response) => {
+                                return response.json();
+                            }).then((data) => {
+                                let runCount = 0;
+
+                                data["data"].forEach(run => {
+                                    if (run["game"] === GAME_ID) {
+                                        runCount++;
+                                    }
+                                });
+
+                                if (runCount === 1) {
+                                    let message = `${playerName} submitted their first run.\n`;
+
+                                    if (player["rel"] === "guest") {
+                                        message += "User is a guest runner and therefore has no speedrun.com profile.\n";
+                                        message += "Good luck finding them :upside_down:\n";
+                                    } else {
+                                        message += `Run link: <${run["weblink"]}>\n`
+                                        message += `User link: <${player["weblink"]}>\n`;
+                                    }
+                                    Discord.sendMessage(message, TARGET_CHANNEL);
+                                }
+                            });
+                        });
+                    });
                 })
             });
 
