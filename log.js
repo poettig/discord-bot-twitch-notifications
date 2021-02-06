@@ -21,6 +21,10 @@ prefix.apply(log, {
 	},
 	timestampFormatter(date) {
 		return strftime("%Y-%m-%d %H:%M:%S", date);
+	},
+	nameFormatter(name) {
+		let actualName = name || "root";
+		return actualName.padStart(10, " ");
 	}
 });
 
