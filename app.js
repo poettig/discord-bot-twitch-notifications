@@ -5,6 +5,9 @@ const bodyParser = require('body-parser');
 const twitchClient = require('./twitch');
 const config = require('./config.json');
 const Stream = require('./models/Stream');
+const Discord = require('./discord');
+const db = require('./connection');
+const fetch = require('node-fetch');
 
 const app = express();
 
@@ -51,7 +54,7 @@ function validateStreams(streams) {
 }
 
 async function checkStreams() {
-    return Promise.try(() => {
+    Promise.try(() => {
         log.debug('Verifying current webhook subs...');
         return twitchClient.getAllWebhooks()
     }).then((subs) => {
@@ -86,7 +89,123 @@ async function checkStreams() {
     });
 }
 
+function fetchAllFromSRCURL(pageUrl, earliest_submission_timestamp = 0, data = []) {
+    return fetch(pageUrl).then((response) => {
+        return response.json();
+    }).then((jsonData) => {
+        let filtered = jsonData["data"].filter(elem => {
+            return new Date(elem["submitted"]).getTime() / 1000 >= earliest_submission_timestamp
+        });
+
+        // No more runs found that are early enough.
+        if (filtered.length === 0) {
+            return data;
+        }
+
+        const newData = [...data, ...filtered];
+
+        if (!("pagination" in jsonData)) {
+            return newData;
+        }
+
+        let url = null;
+        jsonData["pagination"]["links"].forEach((elem) => {
+            if (elem["rel"] === "next") {
+                url = elem["uri"];
+            }
+        });
+
+        if (url != null) {
+            return fetchAllFromSRCURL(url, earliest_submission_timestamp, newData);
+        } else {
+            return newData;
+        }
+    })
+}
+
+async function checkSRC() {
+    const INTERVAL = 60 * 60 * 1000; // Each hour.
+    const URL = "https://www.speedrun.com/api/v1/runs?game=9d35xw1l&orderby=date&direction=desc&embed=category,players";
+    const TARGET_CHANNEL = "⛔moderator-chat";
+
+    db("src").select().orderBy("internal_id", "desc").first().then((row) => {
+        if (row == null) {
+            db("src").insert({latest: Math.trunc(Date.now() / 1000)}).then();
+            return 0;
+        } else {
+            db("src").update({latest: Math.trunc(Date.now() / 1000)}).then();
+            return row["latest"];
+        }
+    }).then((limit) => {
+            // Load runs from SRC
+            return fetchAllFromSRCURL(URL, limit);
+    }).then((runs) => {
+        twitchClient.ensureToken().then(() => {
+            log.info(`Scanning ${runs.length} runs for invalid video proof.`);
+
+            function sendMessage(run, prefix) {
+                let message = prefix;
+                message += `${run["category"]["data"]["name"]} run`;
+                message += ` in ${run["times"]["primary"].substring(2)}`;
+                message += ` by ${run["players"]["data"][0]["names"]["international"]}.\n`;
+                message += `Submission from ${run["submitted"]}\n`;
+                message += `Link: <${run["weblink"]}>\n`;
+                Discord.sendMessage(message, TARGET_CHANNEL);
+            }
+
+            runs.forEach((run) => {
+                // Check if it has a twitch video.
+                if (!("videos" in run && "links" in run["videos"])) {
+                    return;
+                }
+
+                run["videos"]["links"].forEach((link) => {
+                    let match = link["uri"].match(/^(?:https?:\/\/)?(?:www\.)?twitch\.tv\/videos\/(\d+)/);
+                    if (match != null && match.length === 2) {
+                        // Check if it is archived.
+                        twitchClient.apiRequest({
+                            endpoint: `/videos`,
+                            payload: {
+                                id: match[1]
+                            }
+                        }).then((data) => {
+                            if (data === 404) {
+                                // The video is offline.
+                                let prefix = "Found offline video proof (Twitch returned 404).\n";
+                                sendMessage(run, prefix);
+                                return;
+                            }
+
+                            if (data == null || !("data" in data)) {
+                                log.error("Got invalid answer for " + match[1]);
+                                return;
+                            }
+
+                            data = data["data"];
+
+                            if (data.length !== 1) {
+                                log.error("Twitch API didn't return a single result for a video ID.");
+                                log.error(data);
+                                return;
+                            }
+
+                            if (data[0]["type"] === "archive") {
+                                let prefix = "Found run that has an auto-archived twitch VOD as proof.\n";
+                                sendMessage(run, prefix);
+                            }
+                        });
+                    }
+                })
+            });
+
+        });
+    }).finally(() => {
+        return Promise.delay(INTERVAL).then(() => checkSRC());
+    });
+}
+
 app.listen(5001, () => {
     // Start polling cycle when server came up
     checkStreams();
+    checkSRC();
 });

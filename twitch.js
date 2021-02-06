@@ -45,6 +45,8 @@ function apiRequest({
             }
 
             throw new Error();
+        } else if (res.status !== 200) {
+            return res.status;
         } else {
             log.debug(`Quota left: ${res.headers.get("Ratelimit-Remaining")}`);
             if (responseType === 'json') {
@@ -236,4 +238,13 @@ function getUserId(username) {
     return apiRequest({ endpoint, payload: { login: username } });
 }
 
-module.exports = { getGameId, getUserId, getStreamsByMetadata, getAllWebhooks, subscribeToUserStream, unsubscribeFromUserStream };
+module.exports = {
+    getGameId,
+    getUserId,
+    getStreamsByMetadata,
+    getAllWebhooks,
+    subscribeToUserStream,
+    unsubscribeFromUserStream,
+    apiRequest,
+    ensureToken
+};

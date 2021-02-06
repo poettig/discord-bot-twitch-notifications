@@ -6,6 +6,8 @@ const whitelist = require('./config.json').twitch.whitelist;
 const Discord = require('discord.js');
 const client = new Discord.Client();
 
+let loggedIn = false;
+
 client.on('ready', () => {
 	log.info(`Logged in as ${client.user.tag}`);
 	client.on("message", message => {
@@ -81,7 +83,13 @@ client.on('ready', () => {
 	});
 });
 
-client.login(discordConfig.credentials.botToken);
+client.login(discordConfig.credentials.botToken).then(() => {
+	loggedIn = true;
+});
+
+function isLoggedIn() {
+	return loggedIn;
+}
 
 let failedLogins = 0;
 
@@ -104,17 +112,35 @@ client.once('error', reattemptLogin);
 
 /**
  * @param {Discord.Collection<string, Discord.Channel>} channels
+ * @param filterValue
  * @returns {Array<Discord.TextChannel>}
  */
-function getAllTextChannels(channels) {
+function getAllTextChannels(channels, filterValue = "general") {
 	return Array.from(channels.cache.values()).filter(
-		/** @returns {channel is Discord.TextChannel} */
 		channel => channel.type === 'text'
-	).filter(channel => channel.name === 'general');
+	).filter(channel => channel.name === filterValue);
 }
 
 function escapeMarkdown(string) {
 	return string.replace(/[<>*_~]/gi, "\\$&");
+}
+
+function sendMessage(payload, filterValue = "general") {
+	if (!loggedIn) {
+		log.error("Cannot send message, not logged in to discord!");
+		return false;
+	}
+
+	// allows for filtering to a specific configured discord guild, that can be used to "test" when NODE_ENV=test
+	if (process.env.NODE_ENV === 'test') {
+		const [testChannel] = getAllTextChannels(client.channels, filterValue).filter(channel => channel.guild.name === discordConfig.testGuildName);
+		return testChannel.send(payload);
+	}
+
+	return Promise.map(getAllTextChannels(client.channels, filterValue), (channel) => {
+		log.debug(payload.replace(/\n/g, "\\n"));
+		return channel.send(payload);
+	});
 }
 
 function newStreamAlert(data) {
@@ -144,17 +170,10 @@ function newStreamAlert(data) {
 	}
 
 	let payload = `> ${welcomeMessage} - "${title}"\n> ${url}`;
-
-	// allows for filtering to a specific configured discord guild, that can be used to "test" when NODE_ENV=test
-	if (process.env.NODE_ENV === 'test') {
-		const [testChannel] = getAllTextChannels(client.channels).filter(channel => channel.guild.name === discordConfig.testGuildName);
-		return testChannel.send(payload);
-	}
-
-	return Promise.map(getAllTextChannels(client.channels), (channel) => {
-		log.debug(payload.replace(/\n/g, "\\n"));
-		return channel.send(payload);
-	});
+	return sendMessage(payload);
 }
 
-module.exports = {newStreamAlert};
+module.exports = {
+	newStreamAlert,
+	sendMessage,
+};
