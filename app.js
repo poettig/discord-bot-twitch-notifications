@@ -126,7 +126,7 @@ function fetchAllFromSRCURL(pageUrl, earliest_submission_timestamp = 0, data = [
 async function checkSRC() {
     const INTERVAL = 60 * 60 * 1000; // Each hour.
     const URL = "https://www.speedrun.com/api/v1/runs?game=9d35xw1l&orderby=date&direction=desc&embed=category,players";
-    const TARGET_CHANNEL = "⛔moderator-chat";
+    const TARGET_CHANNEL = "🏢speedrun-administration";
     const GAME_ID = "9d35xw1l";
 
     db("src").select().orderBy("internal_id", "desc").first().then((row) => {
