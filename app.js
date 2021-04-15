@@ -42,6 +42,7 @@ function validateStreams(streams) {
         // Stupid new fields that twitch added and break the database, yeet them.
         delete stream["user_login"];
         delete stream["game_name"];
+        delete stream["is_mature"];
 
         if (existingStream && existingStream.isLive) {
             return Stream.update(existingStream, stream);
