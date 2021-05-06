@@ -39,6 +39,11 @@ function alertStream(stream) {
             log.info(`Denylisted user ${stream.user_id} ${stream.user_name}, suppressing alert.`);
             return;
         }
+
+        // Update the last shoutout time as it actually is being sent now.
+        stream.lastShoutOut = new Date();
+
+        // Send the alert.
         return discordBot.newStreamAlert(stream);
     });
 }
@@ -142,7 +147,6 @@ module.exports = {
             log.info(`${firstPart} - shouting out stream for user ${stream.user_id} ${stream.user_name}`);
             try {
                 await alertStream(updatedStream);
-                updatedStream.lastShoutOut = new Date();
             } catch (e) {
                 log.error(`Unable to trigger alert for ${stream.user_id} ${stream.user_name}: ${e}`);
             }
@@ -160,7 +164,6 @@ module.exports = {
             const newStream = { ...stream, isLive: true, lastShoutOut: null, offline_since: null };
             try {
                 await alertStream(newStream);
-                newStream.lastShoutOut = new Date();
             } catch (e) {
                 log.error(`Unable to trigger alert for ${stream.user_id} ${stream.user_name}: ${e}`)
             } finally {
