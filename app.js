@@ -8,6 +8,7 @@ const Stream = require('./models/Stream');
 const Discord = require('./discord');
 const db = require('./connection');
 const fetch = require('node-fetch');
+const {ensureToken} = require("./twitch");
 
 const app = express();
 
@@ -32,8 +33,8 @@ app.use('/streamUpdate/:userId', bodyParser.json(), async (req, res) => {
 });
 
 /**
- * 
- * @param {Array<TwitchStream>} streams 
+ *
+ * @param {Array<TwitchStream>} streams
  */
 function validateStreams(streams) {
     return Promise.map(streams, async (stream) => {
@@ -51,14 +52,22 @@ function validateStreams(streams) {
         } else {
             return Stream.addNew(stream);
         }
-    })
+    });
 }
 
 async function checkStreams() {
+    function endStream(result) {
+        log.info(`The stream of ${result.user_name} (${result.user_id}) ended, setting to offline.`);
+        Stream.setEnded(result.user_id).then();
+    }
+
+    // Promise.try(() => {
+    //     log.debug('Verifying current webhook subs...');
+    //     return twitchClient.getAllWebhooks()
+    // }).then((subs) =>
     Promise.try(() => {
-        log.debug('Verifying current webhook subs...');
-        return twitchClient.getAllWebhooks()
-    }).then((subs) => {
+        return ensureToken();
+    }).then(() => {
         log.debug('Getting twitch streams by metadata...')
         return twitchClient.getStreamsByMetadata(config.twitch.whitelist.gameIds, {
             tagIds: config.twitch.whitelist.tagIds,
@@ -67,13 +76,31 @@ async function checkStreams() {
     }).then((streams) => {
         if (!streams.length) {
             log.debug('no active streams found with your search configuration');
+
+            // Set all still-marked-live streams as not live.
+            Stream.getLive().then(results => {
+                results.forEach(result => {
+                    endStream(result);
+                });
+            });
+
             return;
         }
 
         log.debug(`${streams.length} active stream(s) found with your search configuration, validating for actions....`);
         return validateStreams(streams).then(
             () => {
-                // Do nothing on success.
+                // Convert search results into array of user ids
+                let ids = streams.map(value => parseInt(value.user_id));
+
+                // Set all streams to offline that where not in the search results.
+                Stream.getLive().then((results) => {
+                    results.forEach((result) => {
+                        if (!ids.includes(result.user_id)) {
+                            endStream(result);
+                        }
+                    });
+                })
             },
             (error) => {
                 log.error(`Error updating a stream:\n${error}`);
@@ -82,7 +109,7 @@ async function checkStreams() {
         );
     }).catch({ code: 'ECONNREFUSED' }, (err) => {
         // being rate limited by twitch... let's let it calm down a bit extra...
-        log.warn('Twitch refused API request (likly due to rate limit) - waiting an additional 30 seconds');
+        log.warn('Twitch refused API request (likley due to rate limit) - waiting an additional 30 seconds');
         return Promise.delay(30000);
     }).finally(() => {
         // debug('polling cycle done, waiting 30s ...')

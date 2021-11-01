@@ -75,10 +75,10 @@ module.exports = {
         return dbTable().where('isLive', true);
     },
     setLive(userId) {
-        return dbTable().update('isLive', true).where('user_id', userId);
+        return dbTable().where('user_id', userId).update('isLive', true);
     },
     setEnded(userId) {
-        return dbTable().update({isLive: false, offline_since: new Date()}).where('user_id', userId);
+        return dbTable().where('user_id', userId).update({isLive: false, offline_since: new Date()});
     },
     /**
      * @returns {Promise<DatabaseStream>} 
@@ -152,7 +152,7 @@ module.exports = {
             }
         }
 
-        subscribeToStream(updatedStream);
+        // subscribeToStream(updatedStream);
         return this.update(updatedStream);
     },
     /**
