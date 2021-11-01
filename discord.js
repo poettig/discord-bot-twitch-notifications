@@ -135,12 +135,13 @@ function sendMessage(payload, filterValue = "general") {
 	if (process.env.NODE_ENV === 'test') {
 		const [testChannel] = getAllTextChannels(client.channels, filterValue).filter(channel => channel.guild.name === discordConfig.testGuildName);
 		return testChannel.send(payload);
+	} else {
+		return Promise.map(getAllTextChannels(client.channels, filterValue), (channel) => {
+			log.debug(payload.replace(/\n/g, "\\n"));
+			return channel.send(payload);
+		});
 	}
 
-	return Promise.map(getAllTextChannels(client.channels, filterValue), (channel) => {
-		log.debug(payload.replace(/\n/g, "\\n"));
-		return channel.send(payload);
-	});
 }
 
 function newStreamAlert(data) {

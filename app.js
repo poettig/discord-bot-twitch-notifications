@@ -93,6 +93,8 @@ async function checkStreams() {
 function fetchAllFromSRCURL(pageUrl, earliest_submission_timestamp = 0, data = []) {
     return fetch(pageUrl).then((response) => {
         return response.json();
+    }, (e) => {
+        log.error("Failed to fetch ${pageUrl}: ${e}");
     }).then((jsonData) => {
         let filtered = jsonData["data"].filter(elem => {
             return new Date(elem["submitted"]).getTime() / 1000 >= earliest_submission_timestamp
