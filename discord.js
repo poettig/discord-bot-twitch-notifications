@@ -29,6 +29,9 @@ client.on('ready', () => {
 			let args = message.content.split(" ");
 			if (args.length > 1) {
 				matchRole = args.slice(1).join(" ");
+				if (matchRole === "everyone") {
+					matchRole = "@" + matchRole;
+				}
 			}
 
 			log.info(`${message.member.displayName} asked for member count of ${matchRole == null ? "all roles" : "role " + matchRole}.`);
@@ -40,7 +43,7 @@ client.on('ready', () => {
 					let longestCount = 0;
 
 					guild.roles.cache.forEach((role) => {
-						if (matchRole != null && role.name.toLowerCase() !== matchRole) {
+						if (matchRole != null && role.name !== matchRole) {
 							return;
 						}
 
