@@ -247,12 +247,10 @@ async function checkSRC() {
                                 return;
                             }
 
-                            fetch(link["uri"]).then((response) => {
-                                return response.json();
-                            }).then((data) => {
+                            fetchAllFromSRCURL(link["uri"]).then((response) => {
                                 let runCount = 0;
 
-                                data["data"].forEach(run => {
+                                response.forEach(run => {
                                     if (run["game"] === GAME_ID) {
                                         runCount++;
                                     }
