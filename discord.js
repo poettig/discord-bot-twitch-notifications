@@ -125,23 +125,29 @@ function getAllTextChannels(channels, filterValue = "general") {
 }
 
 function escapeMarkdown(string) {
-	return string.replace(/[<>*_~]/gi, "\\$&");
+	return string.replace(/[<>*_~|`]/gi, "\\$&");
 }
 
-function sendMessage(payload, filterValue = "general") {
+function sendMessage(payload, allowMentions, filterValue = "general") {
 	if (!loggedIn) {
 		log.error("Cannot send message, not logged in to discord!");
 		return false;
 	}
 
+	let messageOptions = { content: allowMentions ? payload : payload.replace(/@/g, "\\$&")	}
+	if (!allowMentions) {
+		messageOptions.allowedMentions = { parse: [] };
+	}
+
+	log.debug(payload.replace(/\n/g, "\\n"));
+
 	// allows for filtering to a specific configured discord guild, that can be used to "test" when NODE_ENV=test
 	if (process.env.NODE_ENV === 'test') {
 		const [testChannel] = getAllTextChannels(client.channels, filterValue).filter(channel => channel.guild.name === discordConfig.testGuildName);
-		return testChannel.send(payload);
+		return testChannel.send(messageOptions);
 	} else {
 		return Promise.map(getAllTextChannels(client.channels, filterValue), (channel) => {
-			log.debug(payload.replace(/\n/g, "\\n"));
-			return channel.send(payload);
+			return channel.send(messageOptions);
 		});
 	}
 
@@ -160,10 +166,12 @@ function newStreamAlert(data) {
 	// Replace markdown formatters in title and display_name
 	let title = escapeMarkdown(data.title).replace(/[\n\r]/g, "");
 	let display_name = escapeMarkdown(data.user_name);
+	let allowMentions = false;
 
 	let welcomeMessage;
 	if (data.user_id === '72692222') {
 		welcomeMessage = '@here We are Live!';
+		allowMentions = true;
 	} else {
 		welcomeMessage = `${display_name} is live!`;
 	}
@@ -174,7 +182,7 @@ function newStreamAlert(data) {
 	}
 
 	let payload = `> ${welcomeMessage} - "${title}"\n> ${url}`;
-	return sendMessage(payload);
+	return sendMessage(payload, allowMentions);
 }
 
 module.exports = {
