@@ -40,7 +40,7 @@ function checkStreams() {
 		Stream.setEnded(result.user_id).then();
 	}
 
-	log.info("Checking streams...");
+	log.debug("Checking streams...");
 	return ensureToken().then(() => {
 		log.debug('Getting twitch streams by metadata...')
 		return twitchClient.getStreamsByMetadata(config.twitch.allowlist.gameIds, {
@@ -251,7 +251,7 @@ function processSpeedrun(run) {
 
 async function processSpeedruns(runs) {
 	if (runs.length === 0) {
-		log.info("No new speedruns to process.");
+		log.debug("No new speedruns to process.");
 		return;
 	}
 
@@ -260,7 +260,7 @@ async function processSpeedruns(runs) {
 	// Process all runs in the fetched chunk.
 	for (let run of runs.reverse()) {
 		await processSpeedrun(run);
-		log.debug(`Processed run ${run["id"]} from ${new Date(run["submitted"])}.`);
+		log.info(`Processed run ${run["id"]} from ${new Date(run["submitted"])}.`);
 	}
 }
 
@@ -303,7 +303,7 @@ function fetchAllUnprocessedSpeedruns(lastProcessedRunTimestamp) {
 }
 
 function checkSpeedruns() {
-	log.info("Checking runs on SRC...");
+	log.debug("Checking runs on SRC...");
 
 	let dbPromise = db("src")
 		.select()
@@ -325,8 +325,12 @@ function checkSpeedruns() {
 	}).then(processSpeedruns);
 }
 
+function startMonitor(functionToMonitor, interval) {
+	functionToMonitor();
+	setInterval(() => functionToMonitor().catch(log.error), interval);
+}
 // Check streams every 30 seconds
-checkStreams().catch(log.error).finally(() => BluebirdPromise.delay(30000).then(checkStreams));
+startMonitor(checkStreams, 30000);
 
 // Check speedruns every 15 minutes
-checkSpeedruns().catch(log.error).finally(() => BluebirdPromise.delay(900000).then(checkSpeedruns));
+startMonitor(checkSpeedruns, 900000);
