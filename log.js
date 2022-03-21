@@ -1,7 +1,7 @@
-const log = require('loglevel');
-const chalk = require('chalk');
-const prefix = require('loglevel-plugin-prefix');
-const strftime = require('strftime');
+import log from "loglevel"
+import chalk from "chalk"
+import prefix from "loglevel-plugin-prefix"
+import strftime from "strftime"
 
 const colors = {
 	TRACE: chalk.magenta,
@@ -28,7 +28,7 @@ prefix.apply(log, {
 	}
 });
 
-function createLogger(name, level) {
+export function createLogger(name, level) {
 	let logger = log.getLogger(name);
 	try {
 		try {
@@ -41,5 +41,3 @@ function createLogger(name, level) {
 	}
 	return logger;
 }
-
-module.exports = {createLogger};

@@ -1,15 +1,4 @@
-'use strict';
-
-/**
- * @typedef {import('knex')} Knex
- * @typedef {import('knex').TableBuilder} Table
- * @typedef {import('bluebird')} Promise
- */
-exports.up = function (/** @type {Knex} */knex, /** @type {Promise} */Promise) {
-    /**
-     * 
-     * @param {Table} table 
-     */
+exports.up = function (knex, Promise) {
     const streamsSchema = (table) => {
         table.increments('internal_id').primary();
         table.integer('stream_id').unique().notNullable();
@@ -32,5 +21,5 @@ exports.up = function (/** @type {Knex} */knex, /** @type {Promise} */Promise) {
 };
 
 exports.down = function (knex, Promise) {
-
+    return knex.schema.dropTable('streams');
 };

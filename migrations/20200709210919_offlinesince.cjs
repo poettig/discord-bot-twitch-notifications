@@ -1,4 +1,3 @@
-
 exports.up = function(knex, Promise) {
   return knex.schema.table("streams", (table) => {
 	table.dateTime('offline_since');

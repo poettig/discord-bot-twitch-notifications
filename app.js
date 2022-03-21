@@ -1,287 +1,332 @@
-const log = require('./log.js').createLogger("app", process.env.LEVEL_APP)
-const Promise = require('bluebird');
-const express = require('express');
-const bodyParser = require('body-parser');
-const twitchClient = require('./twitch');
-const config = require('./config.json');
-const Stream = require('./models/Stream');
-const Discord = require('./discord');
-const db = require('./connection');
-const fetch = require('node-fetch');
-const {ensureToken} = require("./twitch");
+import * as loglib from "./log.js"
+import BluebirdPromise from "bluebird";
+import * as twitchClient from "./twitch.js"
+import {ensureToken} from "./twitch.js"
+import config from "./config.json" assert {type: "json"}
+import * as Stream from "./Stream.js"
+import * as Discord from "./discordbot.js"
+import db from "./connection.js"
+import fetch from "node-fetch"
 
-const app = express();
-
-app.use('/streamUpdate/:userId', bodyParser.json(), async (req, res) => {
-    log.debug('Webhook received', req.params.userId);
-    const userId = req.params.userId;
-
-    if (req.query['hub.challenge']) {
-        log.debug(`Verification request received on webhook for user ${userId} with challenge ${req.query['hub.challenge']}`);
-        return res.send(req.query['hub.challenge']);
-    }
-
-    if (Array.isArray(req.body.data) && !req.body.data.length) {
-        log.debug(`End of stream webhook came in for user id ${userId}, unsubscribing...`);
-        await Stream.setEnded(userId);
-        return twitchClient.unsubscribeFromUserStream(userId).then(() => res.sendStatus(200));
-    } else {
-        log.debug(`Non-empty webhook came in for user id ${userId}, leaving alone`);
-    }
-
-    return res.sendStatus(200);
-});
+const log = loglib.createLogger("app", process.env.LEVEL_APP);
+const factorioGameID = "9d35xw1l";
 
 /**
  *
  * @param {Array<TwitchStream>} streams
  */
 function validateStreams(streams) {
-    return Promise.map(streams, async (stream) => {
-        const existingStream = await Stream.getOne(stream.user_id);
+	return BluebirdPromise.map(streams, async (stream) => {
+		const existingStream = await Stream.getOne(stream.user_id);
 
-        // Stupid new fields that twitch added and break the database, yeet them.
-        delete stream["user_login"];
-        delete stream["game_name"];
-        delete stream["is_mature"];
+		// Stupid new fields that twitch added and break the database, yeet them.
+		delete stream["user_login"];
+		delete stream["game_name"];
+		delete stream["is_mature"];
 
-        if (existingStream && existingStream.isLive) {
-            return Stream.update(existingStream, stream);
-        } else if (existingStream) {
-            return Stream.goneLive(existingStream, stream);
-        } else {
-            return Stream.addNew(stream);
-        }
-    });
+		if (existingStream && existingStream.isLive) {
+			return Stream.update(existingStream, stream);
+		} else if (existingStream) {
+			return Stream.goneLive(existingStream, stream);
+		} else {
+			return Stream.addNew(stream);
+		}
+	});
 }
 
-async function checkStreams() {
-    function endStream(result) {
-        log.info(`The stream of ${result.user_name} (${result.user_id}) ended, setting to offline.`);
-        Stream.setEnded(result.user_id).then();
-    }
+function checkStreams() {
+	function endStream(result) {
+		log.info(`The stream of ${result.user_name} (${result.user_id}) ended, setting to offline.`);
+		Stream.setEnded(result.user_id).then();
+	}
 
-    // Promise.try(() => {
-    //     log.debug('Verifying current webhook subs...');
-    //     return twitchClient.getAllWebhooks()
-    // }).then((subs) =>
-    Promise.try(() => {
-        return ensureToken();
-    }).then(() => {
-        log.debug('Getting twitch streams by metadata...')
-        return twitchClient.getStreamsByMetadata(config.twitch.whitelist.gameIds, {
-            tagIds: config.twitch.whitelist.tagIds,
-            keywords: config.twitch.whitelist.keywords
-        });
-    }).then((streams) => {
-        if (!streams.length) {
-            log.debug('no active streams found with your search configuration');
+	log.info("Checking streams...");
+	return ensureToken().then(() => {
+		log.debug('Getting twitch streams by metadata...')
+		return twitchClient.getStreamsByMetadata(config.twitch.allowlist.gameIds, {
+			tagIds: config.twitch.allowlist.tagIds,
+			keywords: config.twitch.allowlist.keywords
+		});
+	}).then((streams) => {
+		if (!streams.length) {
+			log.debug('no active streams found with your search configuration');
 
-            // Set all still-marked-live streams as not live.
-            Stream.getLive().then(results => {
-                results.forEach(result => {
-                    endStream(result);
-                });
-            });
+			// Set all still-marked-live streams as not live.
+			Stream.getAllLiveStreams().then(results => {
+				results.forEach(result => {
+					endStream(result);
+				});
+			});
 
-            return;
-        }
+			return Promise.resolve();
+		}
 
-        log.debug(`${streams.length} active stream(s) found with your search configuration, validating for actions....`);
-        return validateStreams(streams).then(
-            () => {
-                // Convert search results into array of user ids
-                let ids = streams.map(value => parseInt(value.user_id));
+		log.debug(`${streams.length} active stream(s) found with your search configuration, validating for actions....`);
+		return validateStreams(streams).then(() => {
+			// Convert search results into array of user ids
+			let ids = streams.map(value => parseInt(value.user_id));
 
-                // Set all streams to offline that where not in the search results.
-                Stream.getLive().then((results) => {
-                    results.forEach((result) => {
-                        if (!ids.includes(result.user_id)) {
-                            endStream(result);
-                        }
-                    });
-                })
-            },
-            (error) => {
-                log.error(`Error updating a stream:\n${error}`);
-                process.exit(-1);
-            }
-        );
-    }).catch({ code: 'ECONNREFUSED' }, (err) => {
-        // being rate limited by twitch... let's let it calm down a bit extra...
-        log.warn('Twitch refused API request (likley due to rate limit) - waiting an additional 30 seconds');
-        return Promise.delay(30000);
-    }).finally(() => {
-        // debug('polling cycle done, waiting 30s ...')
-        return Promise.delay(30000).then(() => checkStreams());
-    });
+			// Set all streams to offline that where not in the search results.
+			Stream.getAllLiveStreams().then((results) => {
+				results.forEach((result) => {
+					if (!ids.includes(result.user_id)) {
+						endStream(result);
+					}
+				});
+			})
+		});
+	});
 }
 
-function fetchAllFromSRCURL(pageUrl, earliest_submission_timestamp = 0, data = []) {
-    return fetch(pageUrl).then((response) => {
-        return response.json();
-    }, (e) => {
-        log.error("Failed to fetch ${pageUrl}: ${e}");
-    }).then((jsonData) => {
-        let filtered = jsonData["data"].filter(elem => {
-            return new Date(elem["submitted"]).getTime() / 1000 >= earliest_submission_timestamp
-        });
-
-        // No more runs found that are early enough.
-        if (filtered.length === 0) {
-            return data;
-        }
-
-        const newData = [...data, ...filtered];
-
-        if (!("pagination" in jsonData)) {
-            return newData;
-        }
-
-        let url = null;
-        jsonData["pagination"]["links"].forEach((elem) => {
-            if (elem["rel"] === "next") {
-                url = elem["uri"];
-            }
-        });
-
-        if (url != null) {
-            return fetchAllFromSRCURL(url, earliest_submission_timestamp, newData);
-        } else {
-            return newData;
-        }
-    })
+function sendSpeedrunAdministrationMessage(message) {
+	Discord.sendMessage(message, false, "🏢speedrun-administration");
 }
 
-async function checkSRC() {
-    const INTERVAL = 60 * 60 * 1000; // Each hour.
-    const URL = "https://www.speedrun.com/api/v1/runs?game=9d35xw1l&orderby=date&direction=desc&embed=category,players";
-    const TARGET_CHANNEL = "🏢speedrun-administration";
-    const GAME_ID = "9d35xw1l";
+function sendMessageWithRunInformation(run, prefix) {
+	let message = prefix;
 
-    db("src").select().orderBy("internal_id", "desc").first().then((row) => {
-        if (row == null) {
-            db("src").insert({latest: Math.trunc(Date.now() / 1000)}).then();
-            return 0;
-        } else {
-            db("src").update({latest: Math.trunc(Date.now() / 1000)}).then();
-            return row["latest"];
-        }
-    }).then((limit) => {
-            // Load runs from SRC
-            return fetchAllFromSRCURL(URL, limit);
-    }).then((runs) => {
-        twitchClient.ensureToken().then(() => {
-            let logMsg = `Scanning ${runs.length} run${runs.length !== 1 ? "s" : ""} for invalid video proof.`;
-            runs.length > 0 ? log.info(logMsg) : log.debug(logMsg);
+	let runners = [];
+	run["players"]["data"].forEach((runner) => {
+		runners.push(getRunnerName(runner));
+	});
 
-            function sendMessageWithRunInformation(run, prefix) {
-                let message = prefix;
-
-                let players = [];
-                run["players"]["data"].forEach((player) => {
-                    if (player["rel"] === "guest") {
-                        players.push(player["name"]);
-                    } else {
-                        players.push(player["names"]["international"]);
-                    }
-                });
-
-                message += `${run["category"]["data"]["name"]} run`;
-                message += ` in ${run["times"]["primary"].substring(2)}`;
-                message += ` by ${players.join(", ")}.\n`;
-                message += `Submission from ${run["submitted"]}\n`;
-                message += `Link: <${run["weblink"]}>\n`;
-                Discord.sendMessage(message, TARGET_CHANNEL);
-            }
-
-            runs.forEach((run) => {
-                // Check if it has a twitch video.
-                if (!("videos" in run && "links" in run["videos"])) {
-                    return;
-                }
-
-                run["videos"]["links"].forEach((link) => {
-                    let match = link["uri"].match(/^(?:https?:\/\/)?(?:www\.)?twitch\.tv\/videos\/(\d+)/);
-                    if (match != null && match.length === 2) {
-                        // Check if it is archived.
-                        twitchClient.apiRequest({
-                            endpoint: `/videos`,
-                            payload: {
-                                id: match[1]
-                            }
-                        }).then((data) => {
-                            if (data === 404) {
-                                // The video is offline.
-                                let prefix = "Found offline video proof (Twitch returned 404).\n";
-                                sendMessageWithRunInformation(run, prefix);
-                                return;
-                            }
-
-                            if (data == null || !("data" in data)) {
-                                log.error("Got invalid answer for " + match[1]);
-                                return;
-                            }
-
-                            data = data["data"];
-
-                            if (data.length !== 1) {
-                                log.error("Twitch API didn't return a single result for a video ID.");
-                                log.error(data);
-                                return;
-                            }
-
-                            if (data[0]["type"] === "archive") {
-                                let prefix = "Found run that has an auto-archived twitch VOD as proof.\n";
-                                sendMessageWithRunInformation(run, prefix);
-                            }
-                        });
-                    }
-
-                    // Check if the run is from a new speedrunner (first game submission)
-                    run["players"]["data"].forEach((player) => {
-                        let playerName = player["rel"] === "guest" ? player["name"] : player["names"]["international"];
-
-                        player["links"].forEach((link) => {
-                            if (link["rel"] !== "runs") {
-                                return;
-                            }
-
-                            fetchAllFromSRCURL(link["uri"]).then((response) => {
-                                let runCount = 0;
-
-                                response.forEach(run => {
-                                    if (run["game"] === GAME_ID) {
-                                        runCount++;
-                                    }
-                                });
-
-                                if (runCount === 1) {
-                                    let message = `${playerName} submitted their first run.\n`;
-
-                                    if (player["rel"] === "guest") {
-                                        message += "User is a guest runner and therefore has no speedrun.com profile.\n";
-                                        message += "Good luck finding them :upside_down:\n";
-                                    } else {
-                                        message += `Run link: <${run["weblink"]}>\n`
-                                        message += `User link: <${player["weblink"]}>\n`;
-                                    }
-                                    Discord.sendMessage(message, TARGET_CHANNEL);
-                                }
-                            });
-                        });
-                    });
-                })
-            });
-
-        });
-    }).finally(() => {
-        return Promise.delay(INTERVAL).then(() => checkSRC());
-    });
+	message += `${run["category"]["data"]["name"]} run`;
+	message += ` in ${run["times"]["primary"].substring(2)}`;
+	message += ` by ${runners.join(", ")}.\n`;
+	message += `Submission from ${run["submitted"]}\n`;
+	message += `Link: <${run["weblink"]}>\n`;
+	sendSpeedrunAdministrationMessage(message);
 }
 
-app.listen(5001, () => {
-    // Start polling cycle when server came up
-    checkStreams();
-    checkSRC();
-});
+function fetchSRCUrl(pageUrl) {
+	log.debug(`Fetching ${pageUrl}...`)
+	return fetch(pageUrl).then((response) => {
+		return response.json();
+	}).then((jsonData) => {
+		if (!jsonData) {
+			throw "Failed to fetch SRC json data";
+		}
+
+		// Maximum number of requests per minute reached, retry after a bit.
+		if (jsonData.status === 420) {
+			return BluebirdPromise.delay(10000).then(() => {
+				fetchSRCUrl(pageUrl)
+			});
+		}
+
+		return jsonData;
+	}).catch((err) => {
+		throw `Failed to fetch ${pageUrl}: ${err}`;
+	});
+}
+
+function checkTwitchVideoProof(run, videoId) {
+	// Check if it is archived.
+	return twitchClient.apiRequest({
+		endpoint: `/videos`,
+		payload: {
+			id: videoId
+		}
+	}).then((data) => {
+		if (data === 404) {
+			// The video is offline.
+			let prefix = "Found offline video proof (Twitch returned 404).\n";
+			sendMessageWithRunInformation(run, prefix);
+			return Promise.resolve();
+		}
+
+		if (data == null || !("data" in data)) {
+			throw `Got invalid answer for video with id ${videoId}`;
+		}
+
+		data = data["data"];
+
+		if (data.length !== 1) {
+			throw "Twitch API didn't return a single result for a video ID.";
+		}
+
+		if (data[0]["type"] === "archive") {
+			let prefix = "Found run that has an auto-archived twitch VOD as proof.\n";
+			sendMessageWithRunInformation(run, prefix);
+			return Promise.resolve();
+		}
+	});
+}
+
+function checkVideoProof(run) {
+	// Check if it has a video link. If not, send "no video proof" message.
+	if (!("videos" in run && "links" in run["videos"])) {
+		sendMessageWithRunInformation(run, "Run is missing video proof.")
+		return Promise.resolve();
+	}
+
+	for (let link of run["videos"]["links"]) {
+		let match = link["uri"].match(/^(?:https?:\/\/)?(?:www\.)?twitch\.tv\/videos\/(\d+)/);
+		if (match != null && match.length === 2) {
+			return checkTwitchVideoProof(run, match[1]);
+		}
+	}
+
+	return Promise.resolve();
+}
+
+async function checkIfKnownRunner(runner) {
+	if (runner["rel"] === "guest") {
+		return false;
+	}
+
+	return await db("runners").where("runner_id", runner["id"]).then(rows => {
+		return rows.length !== 0;
+	});
+}
+
+function getRunnerName(runner) {
+	return runner["rel"] === "guest" ? runner["name"] : runner["names"]["international"];
+}
+
+async function checkForNewRunners(run) {
+	let promises = [];
+
+	for (let runner of run["players"]["data"]) {
+		let runnerName = getRunnerName(runner);
+
+		if (runner["rel"] === "guest") {
+			// Do not process guest runners as there is no way to contact them and they cannot submit runs themselves.
+			// Therefore, there is no need to check if they got their first ever submission right - someone with an account has to submit it.
+			continue;
+		}
+
+		if (await checkIfKnownRunner(runner)) {
+			log.debug(`${runnerName} (${runner["id"]}) is already known, skipping...`);
+			continue;
+		}
+
+		for (let link of runner["links"]) {
+			if (link["rel"] !== "runs") {
+				continue;
+			}
+
+			let promise = fetchAllFromSrcUrl(link["uri"]).then((response) => {
+				let runCount = 0;
+
+				response.forEach(run => {
+					if (run["game"] === factorioGameID) {
+						runCount++;
+					}
+				});
+
+				if (runCount === 1) {
+					log.debug(`${runnerName} (${runner["id"]}) submitted their first run, announcing...`);
+					let message = `${runnerName} submitted their first run.\n`;
+
+					if (runner["rel"] === "guest") {
+						message += "User is a guest runner and therefore has no speedrun.com profile.\n";
+						message += "Good luck finding them :upside_down:\n";
+					} else {
+						message += `Run link: <${run["weblink"]}>\n`
+						message += `User link: <${runner["weblink"]}>\n`;
+					}
+
+					sendSpeedrunAdministrationMessage(message);
+				}
+
+				return db("runners").insert({runner_id: runner["id"], runner_name: runnerName});
+			});
+
+			promises.push(promise);
+		}
+	}
+
+	return BluebirdPromise.all(promises);
+}
+
+function processSpeedrun(run) {
+	let videoProofPromise = checkVideoProof(run);
+	let newRunnerPromise = checkForNewRunners(run);
+	return BluebirdPromise.all([videoProofPromise, newRunnerPromise]).then(() => {
+		// Mark the run as processed.
+		return db("src").update({latest: new Date(run["submitted"]).getTime() / 1000}).then();
+	});
+}
+
+async function processSpeedruns(runs) {
+	if (runs.length === 0) {
+		log.info("No new speedruns to process.");
+		return;
+	}
+
+	log.info(`Processing ${runs.length} new speedrun${runs.length === 1 ? "" : "s"}.`);
+
+	// Process all runs in the fetched chunk.
+	for (let run of runs.reverse()) {
+		await processSpeedrun(run);
+		log.debug(`Processed run ${run["id"]} from ${new Date(run["submitted"])}.`);
+	}
+}
+
+function fetchAllFromSrcUrl(url, filterFunction) {
+	let runs = [];
+
+	function fetchChunk(chunkUrl) {
+		return fetchSRCUrl(chunkUrl).then((jsonData) => {
+			for (let run of jsonData["data"]) {
+				if (typeof filterFunction === "function" && filterFunction(run)) {
+					// We reached an already processed run, stop fetching more runs.
+					return runs;
+				}
+
+				runs.push(run);
+			}
+
+			if (!("pagination" in jsonData)) {
+				// We are done, no more runs left. Resolve promise.
+				return runs;
+			}
+
+			for (let link of jsonData["pagination"]["links"]) {
+				if (link["rel"] === "next") {
+					return fetchChunk(link["uri"]);
+				}
+			}
+
+			// We are done, no more runs left. Resolve promise.
+			return runs;
+		});
+	}
+
+	return fetchChunk(url);
+}
+
+function fetchAllUnprocessedSpeedruns(lastProcessedRunTimestamp) {
+	const URL = `https://www.speedrun.com/api/v1/runs?game=${factorioGameID}&orderby=date&direction=desc&embed=category,players`;
+	return fetchAllFromSrcUrl(URL, (run) => new Date(run["submitted"]).getTime() / 1000 <= lastProcessedRunTimestamp);
+}
+
+function checkSpeedruns() {
+	log.info("Checking runs on SRC...");
+
+	let dbPromise = db("src")
+		.select()
+		.orderBy("internal_id", "desc")
+		.first()
+		.then((row) => {
+			if (row == null) {
+				db("src").insert({latest: 0}).then();
+				return 0;
+			}
+
+			return row["latest"];
+		});
+
+	let tokenPromise = twitchClient.ensureToken();
+
+	return BluebirdPromise.all([dbPromise, tokenPromise]).then((results) => {
+		return fetchAllUnprocessedSpeedruns(results[0]);
+	}).then(processSpeedruns);
+}
+
+// Check streams every 30 seconds
+checkStreams().catch(log.error).finally(() => BluebirdPromise.delay(30000).then(checkStreams));
+
+// Check speedruns every 15 minutes
+checkSpeedruns().catch(log.error).finally(() => BluebirdPromise.delay(900000).then(checkSpeedruns));

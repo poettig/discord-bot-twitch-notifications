@@ -1,16 +1,15 @@
-const log = require('./log.js').createLogger("twitch", process.env.LEVEL_TWITCH);
-const Promise = require('bluebird');
-const qs = require('querystring');
-const fetch = require('node-fetch');
-
-const config = require('./config.json');
-const twitchConfig = config.twitch;
+import * as loglib from "./log.js"
+import BluebirdPromise from "bluebird"
+import qs from "node:querystring"
+import fetch from "node-fetch"
+import config from "./config.json" assert { type: "json" }
 
 const URL_BASE = 'https://api.twitch.tv/helix';
+const log = loglib.createLogger("twitch", process.env.LEVEL_TWITCH);
 
 let token;
 
-function apiRequest({
+export function apiRequest({
     endpoint,
     payload = {},
     method = "GET",
@@ -25,7 +24,7 @@ function apiRequest({
         headers["Authorization"] = 'Bearer ' + token;
     }
 
-    const compiledHeaders = { "Client-ID": twitchConfig.credentials.clientId, 'Content-Type': 'application/json', ...headers };
+    const compiledHeaders = { "Client-ID": config.twitch.credentials.clientId, 'Content-Type': 'application/json', ...headers };
     const params = method.toUpperCase() === 'GET' ? `?${qs.stringify(payload)}` : '';
 
     log.debug(`API request to: ${urlBase}${endpoint}${params}`);
@@ -79,8 +78,8 @@ function apiRequest({
 /**
  * @returns {Promise<string>}
  */
-function ensureToken() {
-    return Promise.try(() => {
+export function ensureToken() {
+    return BluebirdPromise.try(() => {
         // @TODO: implement token expiration handling
         if (token) return token;
 
@@ -89,8 +88,8 @@ function ensureToken() {
             endpoint: '/oauth2/token',
             noauth: true,
             payload: {
-                client_id: twitchConfig.credentials.clientId,
-                client_secret: twitchConfig.credentials.clientSecret,
+                client_id: config.twitch.credentials.clientId,
+                client_secret: config.twitch.credentials.clientSecret,
                 grant_type: 'client_credentials',
             },
             method: 'post',
@@ -129,15 +128,9 @@ function getAllTags(cursor, tags = []) {
 
 function getGameId(name) {
     const endpoint = '/games';
-
     return apiRequest({ endpoint, payload: { name } });
 }
 
-/**
- * @param {Array<string> | string} games
- * @param {String} [cursor]
- * @returns {Promise<Array<TwitchStream>>}
- */
 function getStreams(games = [], cursor, streams = []) {
     const endpoint = '/streams';
 
@@ -183,8 +176,8 @@ function getStreamsByKeywords(gameIds, keywords) {
  * @param {{ tagIds: Array<string>, keywords: Array<string> }} options
  * @returns {Promise<Array<TwitchStream>>}
  */
-function getStreamsByMetadata(gameIds, { tagIds, keywords }) {
-    return Promise.all([
+export function getStreamsByMetadata(gameIds, { tagIds, keywords }) {
+    return BluebirdPromise.all([
         getStreamsByTagId(gameIds, tagIds),
         getStreamsByKeywords(gameIds, keywords),
     ]).then(([ taggedStreams, kwStreams ]) => {
@@ -199,52 +192,7 @@ function getStreamsByMetadata(gameIds, { tagIds, keywords }) {
     });
 }
 
-function streamWebhookRequest(userId, mode) {
-    const endpoint = '/webhooks/hub';
-
-    return apiRequest({
-        endpoint,
-        payload: {
-            'hub.callback': `${config.domain}/streamUpdate/${userId}`,
-            'hub.mode': mode,
-            'hub.topic': `${URL_BASE}/streams?user_id=${userId}`,
-            'hub.lease_seconds': 86400
-        },
-        method: 'post',
-        responseType: 'text',
-    }).then(log.debug);
-}
-
-function subscribeToUserStream(userId) {
-    return streamWebhookRequest(userId, 'subscribe')
-}
-
-function unsubscribeFromUserStream(userId) {
-    return streamWebhookRequest(userId, 'unsubscribe')
-}
-
-function getAllWebhooks() {
-    const endpoint = '/webhooks/subscriptions';
-
-    return Promise.try(() => {
-        return ensureToken();
-    }).then(() => {
-        return apiRequest({ endpoint });
-    }).tap(subs => log.debug('API Subscriptions: ', subs));
-}
-
 function getUserId(username) {
     const endpoint = '/users';
     return apiRequest({ endpoint, payload: { login: username } });
 }
-
-module.exports = {
-    getGameId,
-    getUserId,
-    getStreamsByMetadata,
-    getAllWebhooks,
-    subscribeToUserStream,
-    unsubscribeFromUserStream,
-    apiRequest,
-    ensureToken
-};
