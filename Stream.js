@@ -18,18 +18,18 @@ function alertStream(stream) {
     return BluebirdPromise.try(() => {
         log.debug(`Checking title for denylisted keywords: '${stream.title.toLowerCase()}'...`);
         if (stream.title && config.twitch.denylist.keywords.some(kw => stream.title.toLowerCase().includes(kw.toLocaleLowerCase()))) {
-            log.info(`Denylisted keyword found, suppressing alert for user ${stream.user_id} ${stream.user_name}`);
+            log.info(`Denylisted keyword found, suppressing alert for ${stream.user_name} (${stream.user_id}).`);
             return;
         }
 
         log.debug(`Checking for denylisted tags: '${stream.tag_ids}'...`);
         if (stream.tag_ids && config.twitch.denylist.tagIds.some(tag => stream.tag_ids.includes(tag))) {
-            log.info(`Denylisted tag found, suppressing alert for user ${stream.user_id} ${stream.user_name}`);
+            log.info(`Denylisted tag found, suppressing alert for ${stream.user_name} (${stream.user_id}).`);
             return;
         }
 
         if (stream.user_id && config.twitch.denylist.userIds.includes(stream.user_id)) {
-            log.info(`Denylisted user ${stream.user_id} ${stream.user_name}, suppressing alert.`);
+            log.info(`Denylisted user, suppressing alert for ${stream.user_name} (${stream.user_id}).`);
             return;
         }
 
@@ -113,15 +113,15 @@ export function isAllowlisted(stream) {
  * @param {TwitchStream} update
  */
 export async function goneLive(stream, update) {
-    log.info(`Existing stream, seen newly live: user ${stream.user_id} ${stream.user_name}`);
+    log.info(`Existing stream, seen newly live: ${stream.user_name} (${stream.user_id}).`);
     const updatedStream = { ...stream, ...(convertToDStream(update)), isLive: true, lastShoutOut: stream.lastShoutOut, offline_since: stream.offline_since };
     const lastShoutOutAgeHours = differenceInHours(new Date(), updatedStream.lastShoutOut);
     const offlineSinceMinutes = updatedStream.offline_since !== null ? differenceInMinutes(new Date(), updatedStream.offline_since) : null;
 
     if (offlineSinceMinutes !== null && offlineSinceMinutes < config.thresholds.reconnect_minutes) {
-        log.info(`Stream went offline ${offlineSinceMinutes} minutes ago - probably just a reconnect, suppressing shoutout for user ${stream.user_id} ${stream.user_name}`)
+        log.info(`Stream went offline ${offlineSinceMinutes} minutes ago - probably just a reconnect, suppressing shoutout for ${stream.user_name} (${stream.user_id}).`)
     } else if (lastShoutOutAgeHours !== null && lastShoutOutAgeHours >= 0 && lastShoutOutAgeHours < config.thresholds.shoutout_hours && !this.isAllowlisted(updatedStream)) {
-        log.info(`Stream was already shouted out ${lastShoutOutAgeHours} hours ago - suppressing shoutout for user ${stream.user_id} ${stream.user_name}`);
+        log.info(`Stream was already shouted out ${lastShoutOutAgeHours} hours ago - suppressing shoutout for ${stream.user_name} (${stream.user_id}).`);
     } else {
         let firstPart;
         if (this.isAllowlisted(updatedStream)) {
@@ -133,7 +133,7 @@ export async function goneLive(stream, update) {
         } else {
             firstPart = `Last shoutout was ${lastShoutOutAgeHours} hours ago, which is over threshold`;
         }
-        log.info(`${firstPart} - shouting out stream for user ${stream.user_id} ${stream.user_name}`);
+        log.info(`${firstPart} - shouting out stream for ${stream.user_name} (${stream.user_id}).`);
         await alertStream(updatedStream);
     }
 
@@ -144,8 +144,8 @@ export async function goneLive(stream, update) {
  * @param {TwitchStream} stream
  */
 export async function addNew(stream) {
-    log.debug(`stream for user ${stream.user_id} ${stream.user_name} has never been parsed before! storing internal reference...`);
-    log.info(`shouting out stream for new user ${stream.user_id} ${stream.user_name}`);
+    log.debug(`Stream of ${stream.user_name} (${stream.user_id}) has never been parsed before! storing internal reference...`);
+    log.info(`Shouting out stream for new user ${stream.user_name} (${stream.user_id}).`);
         const newStream = { ...stream, isLive: true, lastShoutOut: null, offline_since: null };
         await alertStream(newStream);
         return this.create(newStream);
