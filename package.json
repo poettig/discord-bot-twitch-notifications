@@ -21,7 +21,7 @@
     "loglevel-plugin-prefix": "0.8.4",
     "node-fetch": "3.2.3",
     "@vscode/sqlite3": "5.0.8",
-    "npm-check-updates": "12.5.9",
+    "npm-check-updates": "14.0.2",
     "strftime": "0.10.1"
   }
 }
