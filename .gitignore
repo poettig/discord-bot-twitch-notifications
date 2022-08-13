@@ -4,4 +4,3 @@ out
 db.sqlite3
 *.iml
 .idea
-package-lock.json
