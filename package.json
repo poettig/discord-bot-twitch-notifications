@@ -6,9 +6,18 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "https://github.com/peet1993/discord-bot-twitch-notifications.git"
+    "url": "https://github.com/poettig/discord-bot-twitch-notifications.git"
   },
-  "author": "Jared Kantrowitz <me@jkantr.com>",
+  "author": {
+    "name": "Peter Oettig",
+    "email": "dbtn-dev@oettig.de"
+  },
+  "contributors": [
+    {
+      "name": "Jared Kantrowitz",
+      "email": "me@jkantr.com"
+    }
+  ],
   "license": "ISC",
   "dependencies": {
     "bluebird": "3.7.2",
@@ -20,8 +29,8 @@
     "loglevel": "1.8.0",
     "loglevel-plugin-prefix": "0.8.4",
     "node-fetch": "3.2.10",
-    "@vscode/sqlite3": "5.0.8",
     "npm-check-updates": "16.3.15",
+    "sqlite3": "5.1.2",
     "strftime": "0.10.1"
   }
 }

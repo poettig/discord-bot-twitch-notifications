@@ -3,7 +3,7 @@ import BluebirdPromise from "bluebird"
 import config from "./config.json" assert {type: "json"}
 import Discord from "discord.js"
 
-const client = new Discord.Client({intents: ["GUILDS", "GUILD_MEMBERS", "GUILD_MESSAGES"]});
+const client = new Discord.Client({intents: ["Guilds", "GuildMembers", "GuildMessages"]});
 const log = loglib.createLogger("discord", process.env.LEVEL_DISCORD);
 
 let loggedIn = false;
@@ -113,7 +113,7 @@ client.once('error', reattemptLogin);
  */
 function getAllTextChannels(channelManager, filterValue = "general") {
 	let channels = Array.from(channelManager.cache.values());
-	let textChannels = channels.filter(channel => channel.type === 'GUILD_TEXT');
+	let textChannels = channels.filter(channel => channel.type === Discord.ChannelType.GuildText);
 	return textChannels.filter(channel => channel.name === filterValue);
 }
 

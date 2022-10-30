@@ -6,12 +6,13 @@ A somewhat-almost use-agnostic starting point for getting a discord bot up and r
 Not currently packaged and/or published to npm. To install, please clone this repo locally and initialize:
 
 ```sh
-git clone https://github.com/jkantr/discord-bot-twitch-notifications
+git clone https://github.com/poettig/discord-bot-twitch-notifications
 npm install
 ```
 
 ### Setup
-For basic usage, you just need to initialize the local `sqlite` database. This can be done by invoking `knex --esm --knexfile knexfile.cjs migrate:latest`.
+For basic usage, you just need to initialize the local `sqlite` database.
+This can be done by invoking `knex --esm --knexfile knexfile.cjs migrate:latest`.
 
 Then, copy `config.example.json` to `config.json` and fill in the missing properties (or alter the existing ones).
 
