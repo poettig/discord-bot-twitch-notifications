@@ -193,6 +193,7 @@ async function checkForNewRunners(run) {
 		if (runner["rel"] === "guest") {
 			// Do not process guest runners as there is no way to contact them and they cannot submit runs themselves.
 			// Therefore, there is no need to check if they got their first ever submission right - someone with an account has to submit it.
+			log.debug(`Runner ${runnerName} (${runner['id']}) is a guest, can't progress.`)
 			continue;
 		}
 
@@ -215,20 +216,23 @@ async function checkForNewRunners(run) {
 					}
 				});
 
+				log.debug(`Unknown runner ${runnerName} (${runner["id"]}) submitted a run, announcing...`);
+				let message = `Previously unknown runner ${runnerName} submitted a run.\n`;
 				if (runCount === 1) {
-					log.debug(`${runnerName} (${runner["id"]}) submitted their first run, announcing...`);
-					let message = `${runnerName} submitted their first run.\n`;
-
-					if (runner["rel"] === "guest") {
-						message += "User is a guest runner and therefore has no speedrun.com profile.\n";
-						message += "Good luck finding them :upside_down:\n";
-					} else {
-						message += `Run link: <${run["weblink"]}>\n`
-						message += `User link: <${runner["weblink"]}>\n`;
-					}
-
-					sendSpeedrunAdministrationMessage(message);
+					message += "This is their first run.\n"
+				} else {
+					message += `They submitted ${runCount} runs already.\n`
 				}
+
+				if (runner["rel"] === "guest") {
+					message += "User is a guest runner and therefore has no speedrun.com profile.\n";
+					message += "Good luck finding them :upside_down:\n";
+				} else {
+					message += `Run link: <${run["weblink"]}>\n`
+					message += `User link: <${runner["weblink"]}>\n`;
+				}
+
+				sendSpeedrunAdministrationMessage(message);
 
 				return db("runners").insert({runner_id: runner["id"], runner_name: runnerName});
 			});
