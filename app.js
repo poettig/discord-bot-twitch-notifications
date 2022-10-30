@@ -219,7 +219,7 @@ async function checkForNewRunners(run) {
 				log.debug(`Unknown runner ${runnerName} (${runner["id"]}) submitted a run, announcing...`);
 				let message = `Previously unknown runner ${runnerName} submitted a run.\n`;
 				if (runCount === 1) {
-					message += "This is their first run.\n"
+					message += "This is their first submission.\n"
 				} else {
 					message += `They submitted ${runCount} runs already.\n`
 				}
