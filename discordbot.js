@@ -69,7 +69,7 @@ client.on('ready', () => {
 					let result = "";
 					// Sort from most to least role members and iterate
 					for (const [roleName, memberCount] of Object.entries(info).sort((a, b) => b[1] - a[1])) {
-						let name = `${roleName}: `
+						let name = `${roleName} `
 						result += `${name.padEnd(longestName + 2, " ")}${memberCount.toString().padStart(longestCount, " ")}\n`;
 					}
 
