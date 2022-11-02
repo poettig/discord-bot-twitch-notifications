@@ -3,7 +3,14 @@ import BluebirdPromise from "bluebird"
 import config from "./config.json" assert {type: "json"}
 import Discord from "discord.js"
 
-const client = new Discord.Client({intents: ["Guilds", "GuildMembers", "GuildMessages"]});
+const client = new Discord.Client({
+	intents: [
+		Discord.GatewayIntentBits.Guilds,
+		Discord.GatewayIntentBits.GuildMessages,
+		Discord.GatewayIntentBits.MessageContent,
+		Discord.GatewayIntentBits.GuildMembers
+	]
+});
 const log = loglib.createLogger("discord", process.env.LEVEL_DISCORD);
 
 let loggedIn = false;
