@@ -11,9 +11,6 @@ function dbTable() {
     return db('streams');
 }
 
-/**
- * @param {ApplicationStream | DatabaseStream} stream 
- */
 function alertStream(stream) {
     return BluebirdPromise.try(() => {
         log.debug(`Checking title for denylisted keywords: '${stream.title.toLowerCase()}'...`);
@@ -41,21 +38,12 @@ function alertStream(stream) {
     }).catch((err) => log.error(`Unable to trigger alert for ${stream.user_id} ${stream.user_name}: ${err}`));
 }
 
-/**
- * 
- * @param {ApplicationStream | TwitchStream} istream 
- * @returns {DatabaseStream} a stream object that can be digested into a database
- */
 function convertToDStream(istream) {
-    const { id, ...dStream } = istream;
     return {
-        ...dStream,
-        // @ts-ignore
+        user_id: istream.user_id,
+        user_name: istream.user_name,
         isLive: istream.isLive != null ? istream.isLive : null,
-        // @ts-ignore
         lastShoutOut: istream.lastShoutOut != null ? istream.lastShoutOut : null,
-        stream_id: id,
-        // @ts-ignore
         offline_since: istream.offline_since != null ? istream.offline_since : null
     };
 }
@@ -72,22 +60,11 @@ export function getOne(userId) {
     return dbTable().where('user_id', userId).first();
 }
 
-/**
- *
- * @param {ApplicationStream | TwitchStream} stream
- * @returns {Promise<ApplicationStream>}
- */
 export async function create(stream) {
     log.debug(`creating new record for ${stream.user_id} ${stream.user_name} in db...`)
     return dbTable().insert(convertToDStream(stream));
 }
 
-/**
- *
- * @param {DatabaseStream} stream
- * @param {TwitchStream} [update]
- * @returns {Promise<ApplicationStream>}
- */
 export async function update(stream, update) {
     let updatedStream;
     log.debug(`stream of user ${stream.user_id} ${stream.user_name} being updated...`);
@@ -101,17 +78,10 @@ export async function update(stream, update) {
     return dbTable().update(stream).where('user_id', updatedStream.user_id);
 }
 
-/**
- * @param {ApplicationStream | TwitchStream | DatabaseStream} stream
- */
 export function isAllowlisted(stream) {
     return config.twitch.allowlist.userIds.includes(stream.user_id);
 }
 
-/**
- * @param {DatabaseStream} stream
- * @param {TwitchStream} update
- */
 export async function goneLive(stream, update) {
     log.info(`Existing stream, seen newly live: ${stream.user_name} (${stream.user_id}).`);
     const updatedStream = { ...stream, ...(convertToDStream(update)), isLive: true, lastShoutOut: stream.lastShoutOut, offline_since: stream.offline_since };
@@ -140,13 +110,10 @@ export async function goneLive(stream, update) {
     return this.update(updatedStream);
 }
 
-/**
- * @param {TwitchStream} stream
- */
 export async function addNew(stream) {
     log.debug(`Stream of ${stream.user_name} (${stream.user_id}) has never been parsed before! storing internal reference...`);
     log.info(`Shouting out stream for new user ${stream.user_name} (${stream.user_id}).`);
-        const newStream = { ...stream, isLive: true, lastShoutOut: null, offline_since: null };
-        await alertStream(newStream);
-        return this.create(newStream);
+    const newStream = { ...stream, isLive: true, lastShoutOut: null, offline_since: null };
+    await alertStream(newStream);
+    return this.create(newStream);
 }

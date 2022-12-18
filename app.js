@@ -19,11 +19,6 @@ function validateStreams(streams) {
 	return BluebirdPromise.map(streams, async (stream) => {
 		const existingStream = await Stream.getOne(stream.user_id);
 
-		// Stupid new fields that twitch added and break the database, yeet them.
-		delete stream["user_login"];
-		delete stream["game_name"];
-		delete stream["is_mature"];
-
 		if (existingStream && existingStream.isLive) {
 			return Stream.update(existingStream, stream);
 		} else if (existingStream) {
@@ -350,9 +345,9 @@ let checkLoginHandler = setInterval(() => {
 		clearInterval(checkLoginHandler);
 
 		// Check streams every 30 seconds
-		startMonitor(checkStreams, 5000);
+		startMonitor(checkStreams, 30000);
 
 		// Check speedruns every 15 minutes
-		startMonitor(checkSpeedruns, 9000);
+		startMonitor(checkSpeedruns, 900000);
 	}
 }, 100);
