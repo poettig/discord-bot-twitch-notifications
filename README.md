@@ -22,5 +22,8 @@ To run with somewhat verbose but also readable output:
 DEBUG=speedbot:* node app.js
 ```
 
+### Adding the bot to Discord
+https://discord.com/api/oauth2/authorize?client_id=690964462269628418&permissions=3072&scope=bot
+
 ## Attributions
 Thanks to [jkantr](https://github.com/jkantr) for the [first implementations and support](https://github.com/jkantr/discord-bot-twitch-notifications)! This started as a fork as they had no time to maintain it anymore but has since became incompatible with upstream caused by making the implementation more specific to Factorio speedrunning and migration to ES modules.
