@@ -28,7 +28,7 @@
     "knex": "2.3.0",
     "loglevel": "1.8.0",
     "loglevel-plugin-prefix": "0.8.4",
-    "node-fetch": "3.2.10",
+    "node-fetch": "3.3.0",
     "npm-check-updates": "16.6.0",
     "sqlite3": "5.1.2",
     "strftime": "0.10.1"
