@@ -99,6 +99,10 @@ export function logout() {
 	client.destroy();
 }
 
+export function isLoggedIn() {
+	return loggedIn;
+}
+
 let failedLogins = 0;
 
 function reattemptLogin(err) {

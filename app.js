@@ -340,12 +340,19 @@ function startMonitor(functionToMonitor, interval) {
 		})
 	}
 
+	log.info(`Starting monitor ${functionToMonitor.name} with interval ${interval}.`)
 	handler = setInterval(monitor, interval);
 	monitor();
 }
 
-// Check streams every 30 seconds
-startMonitor(checkStreams, 5000);
+let checkLoginHandler = setInterval(() => {
+	if (Discord.isLoggedIn()) {
+		clearInterval(checkLoginHandler);
 
-// Check speedruns every 15 minutes
-startMonitor(checkSpeedruns, 9000);
+		// Check streams every 30 seconds
+		startMonitor(checkStreams, 5000);
+
+		// Check speedruns every 15 minutes
+		startMonitor(checkSpeedruns, 9000);
+	}
+}, 100);
