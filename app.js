@@ -330,11 +330,22 @@ function checkSpeedruns() {
 }
 
 function startMonitor(functionToMonitor, interval) {
-	functionToMonitor();
-	setInterval(() => functionToMonitor().catch(log.error), interval);
+	let handler = null;
+
+	let monitor = () => {
+		functionToMonitor().catch((error) => {
+			log.error("Rejection caught in monitor function, closing program with failure state...")
+			log.error(error);
+			process.exit(1);
+		})
+	}
+
+	handler = setInterval(monitor, interval);
+	monitor();
 }
+
 // Check streams every 30 seconds
-startMonitor(checkStreams, 30000);
+startMonitor(checkStreams, 5000);
 
 // Check speedruns every 15 minutes
-startMonitor(checkSpeedruns, 900000);
+startMonitor(checkSpeedruns, 9000);

@@ -95,6 +95,10 @@ client.login(config.discord.credentials.botToken).then(() => {
 	loggedIn = true;
 });
 
+export function logout() {
+	client.destroy();
+}
+
 let failedLogins = 0;
 
 function reattemptLogin(err) {
