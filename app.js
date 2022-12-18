@@ -11,20 +11,27 @@ import fetch from "node-fetch"
 const log = loglib.createLogger("app", process.env.LEVEL_APP);
 const factorioGameID = "9d35xw1l";
 
-/**
- *
- * @param {Array<TwitchStream>} streams
- */
 function validateStreams(streams) {
-	return BluebirdPromise.map(streams, async (stream) => {
-		const existingStream = await Stream.getOne(stream.user_id);
+	return BluebirdPromise.map(streams, async (twitchStream) => {
+		const dbRow = await Stream.getOne(twitchStream.user_id);
 
-		if (existingStream && existingStream.isLive) {
-			return Stream.update(existingStream, stream);
-		} else if (existingStream) {
-			return Stream.goneLive(existingStream, stream);
-		} else {
-			return Stream.addNew(stream);
+		let updateRow = (shoutOutGiven) => {
+			Stream.updateStreamInDB(
+				twitchStream.user_id,
+				twitchStream.user_name,
+				true,
+				shoutOutGiven ? new Date() : dbRow.lastShoutOut,
+				null
+			);
+		}
+
+		if (dbRow && !dbRow.isLive) {
+			return Stream.streamGoneLive(twitchStream, dbRow).then(updateRow);
+		} else if (!dbRow) {
+			return Stream.announceNewStream(twitchStream).then((shoutOutGiven) => {
+				Stream.createNewStreamInDB(twitchStream);
+				updateRow(shoutOutGiven);
+			});
 		}
 	});
 }

@@ -95,10 +95,6 @@ client.login(config.discord.credentials.botToken).then(() => {
 	loggedIn = true;
 });
 
-export function logout() {
-	client.destroy();
-}
-
 export function isLoggedIn() {
 	return loggedIn;
 }
@@ -162,7 +158,7 @@ export function sendMessage(payload, allowMentions, filterValue = "general") {
 
 }
 
-export function newStreamAlert(data) {
+export function newStreamAnnouncement(data) {
 	// Parse username from thumbnail_url as "data.user_name" is the display name, not the login name necessary for a twitch URL
 	let username;
 	let match = data.thumbnail_url.match(/^.*live_user_(.*)-.*$/);

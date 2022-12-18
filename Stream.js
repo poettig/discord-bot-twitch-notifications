@@ -11,41 +11,32 @@ function dbTable() {
     return db('streams');
 }
 
-function alertStream(stream) {
-    return BluebirdPromise.try(() => {
-        log.debug(`Checking title for denylisted keywords: '${stream.title.toLowerCase()}'...`);
-        if (stream.title && config.twitch.denylist.keywords.some(kw => stream.title.toLowerCase().includes(kw.toLocaleLowerCase()))) {
-            log.info(`Denylisted keyword found, suppressing alert for ${stream.user_name} (${stream.user_id}).`);
-            return;
+async function announceStream(twitchStream) {
+    log.debug(`Checking title for denylisted keywords: '${twitchStream.title.toLowerCase()}'...`);
+    if (twitchStream.title && config.twitch.denylist.keywords.some(kw => twitchStream.title.toLowerCase().includes(kw.toLocaleLowerCase()))) {
+        log.info(`Denylisted keyword found, suppressing alert for ${twitchStream.user_name} (${twitchStream.user_id}).`);
+        return false;
+    }
+
+    log.debug(`Checking for denylisted tags: '${twitchStream.tag_ids}'...`);
+    if (twitchStream.tag_ids && config.twitch.denylist.tagIds.some(tag => twitchStream.tag_ids.includes(tag))) {
+        log.info(`Denylisted tag found, suppressing alert for ${twitchStream.user_name} (${twitchStream.user_id}).`);
+        return false;
+    }
+
+    if (twitchStream.user_id && config.twitch.denylist.userIds.includes(twitchStream.user_id)) {
+        log.info(`Denylisted user, suppressing alert for ${twitchStream.user_name} (${twitchStream.user_id}).`);
+        return false;
+    }
+
+    // Send the alert.
+    return discordBot.newStreamAnnouncement(twitchStream).then(
+        () => true,
+        (err) => {
+            log.error(`Unable to trigger alert for ${twitchStream.user_id} ${twitchStream.user_name}: ${err}`);
+            return false;
         }
-
-        log.debug(`Checking for denylisted tags: '${stream.tag_ids}'...`);
-        if (stream.tag_ids && config.twitch.denylist.tagIds.some(tag => stream.tag_ids.includes(tag))) {
-            log.info(`Denylisted tag found, suppressing alert for ${stream.user_name} (${stream.user_id}).`);
-            return;
-        }
-
-        if (stream.user_id && config.twitch.denylist.userIds.includes(stream.user_id)) {
-            log.info(`Denylisted user, suppressing alert for ${stream.user_name} (${stream.user_id}).`);
-            return;
-        }
-
-        // Update the last shoutout time as it actually is being sent now.
-        stream.lastShoutOut = new Date();
-
-        // Send the alert.
-        return discordBot.newStreamAlert(stream);
-    }).catch((err) => log.error(`Unable to trigger alert for ${stream.user_id} ${stream.user_name}: ${err}`));
-}
-
-function convertToDStream(istream) {
-    return {
-        user_id: istream.user_id,
-        user_name: istream.user_name,
-        isLive: istream.isLive != null ? istream.isLive : null,
-        lastShoutOut: istream.lastShoutOut != null ? istream.lastShoutOut : null,
-        offline_since: istream.offline_since != null ? istream.offline_since : null
-    };
+    );
 }
 
 export function getAllLiveStreams() {
@@ -60,41 +51,50 @@ export function getOne(userId) {
     return dbTable().where('user_id', userId).first();
 }
 
-export async function create(stream) {
-    log.debug(`creating new record for ${stream.user_id} ${stream.user_name} in db...`)
-    return dbTable().insert(convertToDStream(stream));
+export async function createNewStreamInDB(twitchStream) {
+    log.debug(`creating new record for ${twitchStream.user_id} ${twitchStream.user_name} in db...`)
+    return dbTable().insert({
+        user_id: twitchStream.user_id,
+        user_name: twitchStream.user_name,
+        isLive: 1,
+        lastShoutOut: null,
+        offline_since: null
+    });
 }
 
-export async function update(stream, update) {
+export async function updateStreamInDB(userID, userName, isLive, lastShoutOut, offlineSince) {
     let updatedStream;
-    log.debug(`stream of user ${stream.user_id} ${stream.user_name} being updated...`);
-
-    if (update) {
-        updatedStream = { ...stream, ...convertToDStream(update) };
-    } else {
-        updatedStream = stream;
-    }
-
-    return dbTable().update(stream).where('user_id', updatedStream.user_id);
+    log.debug(`Database row of user ${userName} (${userID}) being updated...`);
+    return dbTable().update({
+        user_name: userName,
+        isLive: isLive,
+        lastShoutOut: lastShoutOut,
+        offline_since: offlineSince
+    }).where('user_id', userID);
 }
 
-export function isAllowlisted(stream) {
-    return config.twitch.allowlist.userIds.includes(stream.user_id);
+export function isAllowlisted(twitchStream) {
+    return config.twitch.allowlist.userIds.includes(twitchStream.user_id);
 }
 
-export async function goneLive(stream, update) {
-    log.info(`Existing stream, seen newly live: ${stream.user_name} (${stream.user_id}).`);
-    const updatedStream = { ...stream, ...(convertToDStream(update)), isLive: true, lastShoutOut: stream.lastShoutOut, offline_since: stream.offline_since };
-    const lastShoutOutAgeHours = differenceInHours(new Date(), updatedStream.lastShoutOut);
-    const offlineSinceMinutes = updatedStream.offline_since !== null ? differenceInMinutes(new Date(), updatedStream.offline_since) : null;
+export async function streamGoneLive(twitchStream, dbRow) {
+    log.info(`Existing stream, seen newly live: ${twitchStream.user_name} (${twitchStream.user_id}).`);
+    const lastShoutOutAgeHours = differenceInHours(new Date(), dbRow.lastShoutOut);
+    const offlineSinceMinutes = dbRow.offline_since !== null ? differenceInMinutes(new Date(), dbRow.offline_since) : null;
+
+    let shoutoutGiven = false;
+    let isAllowlisted = this.isAllowlisted(twitchStream);
+    let streamInfoString = `${twitchStream.user_name} (${twitchStream.user_id})`;
 
     if (offlineSinceMinutes !== null && offlineSinceMinutes < config.thresholds.reconnect_minutes) {
-        log.info(`Stream went offline ${offlineSinceMinutes} minutes ago - probably just a reconnect, suppressing shoutout for ${stream.user_name} (${stream.user_id}).`)
-    } else if (lastShoutOutAgeHours !== null && lastShoutOutAgeHours >= 0 && lastShoutOutAgeHours < config.thresholds.shoutout_hours && !this.isAllowlisted(updatedStream)) {
-        log.info(`Stream was already shouted out ${lastShoutOutAgeHours} hours ago - suppressing shoutout for ${stream.user_name} (${stream.user_id}).`);
+        log.info(`Stream went offline ${offlineSinceMinutes} minutes ago - probably just a reconnect, suppressing shoutout for ${streamInfoString}.`)
+        return false;
+    } else if (lastShoutOutAgeHours !== null && lastShoutOutAgeHours >= 0 && lastShoutOutAgeHours < config.thresholds.shoutout_hours && !isAllowlisted) {
+        log.info(`Stream was already shouted out ${lastShoutOutAgeHours} hours ago - suppressing shoutout for ${streamInfoString}.`);
+        return false;
     } else {
         let firstPart;
-        if (this.isAllowlisted(updatedStream)) {
+        if (isAllowlisted) {
             firstPart = `User is in the allowlist`;
         } else if (lastShoutOutAgeHours === null) {
             firstPart = `Last shoutout is not set`
@@ -103,17 +103,14 @@ export async function goneLive(stream, update) {
         } else {
             firstPart = `Last shoutout was ${lastShoutOutAgeHours} hours ago, which is over threshold`;
         }
-        log.info(`${firstPart} - shouting out stream for ${stream.user_name} (${stream.user_id}).`);
-        await alertStream(updatedStream);
-    }
 
-    return this.update(updatedStream);
+        log.info(`${firstPart} - shouting out stream for ${streamInfoString}.`);
+        return announceStream(twitchStream);
+    }
 }
 
-export async function addNew(stream) {
-    log.debug(`Stream of ${stream.user_name} (${stream.user_id}) has never been parsed before! storing internal reference...`);
-    log.info(`Shouting out stream for new user ${stream.user_name} (${stream.user_id}).`);
-    const newStream = { ...stream, isLive: true, lastShoutOut: null, offline_since: null };
-    await alertStream(newStream);
-    return this.create(newStream);
+export async function announceNewStream(twitchStream) {
+    log.debug(`Stream of ${twitchStream.user_name} (${twitchStream.user_id}) has never been parsed before! storing internal reference...`);
+    log.info(`Shouting out stream for new user ${twitchStream.user_name} (${twitchStream.user_id}).`);
+    return announceStream(twitchStream);
 }
