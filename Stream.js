@@ -51,13 +51,13 @@ export function getOne(userId) {
     return dbTable().where('user_id', userId).first();
 }
 
-export async function createNewStreamInDB(twitchStream) {
-    log.debug(`creating new record for ${twitchStream.user_id} ${twitchStream.user_name} in db...`)
+export async function createNewStreamInDB(twitchStream, lastShoutOut = null) {
+    log.debug(`Creating new record for ${twitchStream.user_id} ${twitchStream.user_name} in db...`)
     return dbTable().insert({
         user_id: twitchStream.user_id,
         user_name: twitchStream.user_name,
         isLive: 1,
-        lastShoutOut: null,
+        lastShoutOut: lastShoutOut,
         offline_since: null
     });
 }

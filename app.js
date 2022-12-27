@@ -15,22 +15,19 @@ function validateStreams(streams) {
 	return BluebirdPromise.map(streams, async (twitchStream) => {
 		const dbRow = await Stream.getOne(twitchStream.user_id);
 
-		let updateRow = (shoutOutGiven) => {
-			Stream.updateStreamInDB(
-				twitchStream.user_id,
-				twitchStream.user_name,
-				true,
-				shoutOutGiven ? new Date() : dbRow.lastShoutOut,
-				null
-			);
-		}
-
 		if (dbRow && !dbRow.isLive) {
-			return Stream.streamGoneLive(twitchStream, dbRow).then(updateRow);
+			return Stream.streamGoneLive(twitchStream, dbRow).then((shoutOutGiven) => {
+				Stream.updateStreamInDB(
+					twitchStream.user_id,
+					twitchStream.user_name,
+					true,
+					shoutOutGiven ? new Date() : dbRow.lastShoutOut,
+					null
+				);
+			});
 		} else if (!dbRow) {
 			return Stream.announceNewStream(twitchStream).then((shoutOutGiven) => {
-				Stream.createNewStreamInDB(twitchStream);
-				updateRow(shoutOutGiven);
+				Stream.createNewStreamInDB(twitchStream, shoutOutGiven ? new Date() : null);
 			});
 		}
 	});
@@ -63,7 +60,8 @@ function checkStreams() {
 			return Promise.resolve();
 		}
 
-		log.debug(`${streams.length} active stream(s) found with your search configuration, validating for actions....`);
+		log.info(`${streams.length} active stream(s) found with your search configuration, checking for actions....`);
+		log.debug(`Names of active streamers: ${streams.map((entry) => entry.user_name).join(', ')}`)
 		return validateStreams(streams).then(() => {
 			// Convert search results into array of user ids
 			let ids = streams.map(value => parseInt(value.user_id));
