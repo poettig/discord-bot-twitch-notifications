@@ -302,7 +302,7 @@ function fetchAllFromSrcUrl(url, filterFunction) {
 }
 
 function fetchAllUnprocessedSpeedruns(lastProcessedRunTimestamp) {
-	const URL = `https://www.speedrun.com/api/v1/runs?game=${factorioGameID}&orderby=date&direction=desc&embed=category,players`;
+	const URL = `https://www.speedrun.com/api/v1/runs?game=${factorioGameID}&orderby=submitted&direction=desc&embed=category,players`;
 	return fetchAllFromSrcUrl(URL, (run) => new Date(run["submitted"]).getTime() / 1000 <= lastProcessedRunTimestamp);
 }
 
