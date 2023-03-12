@@ -173,13 +173,13 @@ export function newStreamAnnouncement(data) {
 	let display_name = escapeMarkdown(data.user_name);
 	let allowMentions = false;
 
-	let welcomeMessage;
+	let welcomeMessage = '';
 	if (data.user_id === '72692222') {
-		welcomeMessage = '@here We are Live!';
+		welcomeMessage = '@here ';
 		allowMentions = true;
-	} else {
-		welcomeMessage = `${display_name} is live!`;
 	}
+
+	welcomeMessage += `${display_name} is live!`;
 
 	let url = `https://www.twitch.tv/${username}`;
 	if (!config.twitch.allowlist.userIds.includes(data.user_id)) {
