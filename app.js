@@ -1,5 +1,4 @@
 import * as loglib from "./log.js"
-import BluebirdPromise from "bluebird";
 import * as twitchClient from "./twitch.js"
 import {ensureToken} from "./twitch.js"
 import config from "./config.json" assert {type: "json"}
@@ -12,7 +11,7 @@ const log = loglib.createLogger("app", process.env.LEVEL_APP);
 const factorioGameID = "9d35xw1l";
 
 function validateStreams(streams) {
-	return BluebirdPromise.map(streams, async (twitchStream) => {
+	return Promise.all(streams.map(async (twitchStream) => {
 		const dbRow = await Stream.getOne(twitchStream.user_id);
 
 		if (dbRow && !dbRow.isLive) {
@@ -30,7 +29,7 @@ function validateStreams(streams) {
 				Stream.createNewStreamInDB(twitchStream, shoutOutGiven ? new Date() : null);
 			});
 		}
-	});
+	}));
 }
 
 function checkStreams() {
@@ -99,24 +98,24 @@ function sendMessageWithRunInformation(run, prefix) {
 }
 
 function fetchSRCUrl(pageUrl) {
-	log.debug(`Fetching ${pageUrl}...`)
-	return fetch(pageUrl).then((response) => {
-		return response.json();
-	}).then((jsonData) => {
-		if (!jsonData) {
-			throw "Failed to fetch SRC json data";
-		}
+	return new Promise((resolve, reject) => {
+		log.debug(`Fetching ${pageUrl}...`)
+		fetch(pageUrl).then((response) => {
+			return response.json();
+		}).then((jsonData) => {
+			if (!jsonData) {
+				reject("Failed to fetch SRC json data");
+			}
 
-		// Maximum number of requests per minute reached, retry after a bit.
-		if (jsonData.status === 420) {
-			return BluebirdPromise.delay(10000).then(() => {
-				fetchSRCUrl(pageUrl)
-			});
-		}
+			// Maximum number of requests per minute reached, retry after a bit.
+			if (jsonData.status === 420) {
+				setTimeout(() => fetchSRCUrl(pageUrl).then(resolve, reject), 10000);
+			}
 
-		return jsonData;
-	}).catch((err) => {
-		throw `Failed to fetch ${pageUrl}: ${err}`;
+			resolve(jsonData);
+		}).catch((err) => {
+			reject(`Failed to fetch ${pageUrl}: ${err}`);
+		});
 	});
 }
 
@@ -241,13 +240,13 @@ async function checkForNewRunners(run) {
 		}
 	}
 
-	return BluebirdPromise.all(promises);
+	return Promise.all(promises);
 }
 
 function processSpeedrun(run) {
 	let videoProofPromise = checkVideoProof(run);
 	let newRunnerPromise = checkForNewRunners(run);
-	return BluebirdPromise.all([videoProofPromise, newRunnerPromise]).then(() => {
+	return Promise.all([videoProofPromise, newRunnerPromise]).then(() => {
 		// Mark the run as processed.
 		return db("src").update({latest: new Date(run["submitted"]).getTime() / 1000}).then();
 	});
@@ -324,7 +323,7 @@ function checkSpeedruns() {
 
 	let tokenPromise = twitchClient.ensureToken();
 
-	return BluebirdPromise.all([dbPromise, tokenPromise]).then((results) => {
+	return Promise.all([dbPromise, tokenPromise]).then((results) => {
 		return fetchAllUnprocessedSpeedruns(results[0]);
 	}).then(processSpeedruns);
 }

@@ -1,5 +1,4 @@
 import * as loglib from "./log.js"
-import BluebirdPromise from "bluebird"
 import { differenceInMinutes, differenceInHours } from 'date-fns';
 import config from "./config.json" assert { type: "json" }
 import db from "./connection.js"

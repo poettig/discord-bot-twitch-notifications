@@ -1,5 +1,4 @@
 import * as loglib from "./log.js"
-import BluebirdPromise from "bluebird"
 import config from "./config.json" assert {type: "json"}
 import Discord from "discord.js"
 
@@ -79,9 +78,9 @@ export function sendMessage(payload, allowMentions, filterValue = "general") {
 		const [testChannel] = getAllTextChannels(client.channels, filterValue).filter(channel => channel.guild.name === config.discord.testGuildName);
 		return testChannel.send(messageOptions);
 	} else {
-		return BluebirdPromise.map(getAllTextChannels(client.channels, filterValue), (channel) => {
+		return Promise.all(getAllTextChannels(client.channels, filterValue).map(channel => {
 			return channel.send(messageOptions);
-		});
+		}));
 	}
 
 }

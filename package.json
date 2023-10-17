@@ -18,9 +18,13 @@
       "email": "me@jkantr.com"
     }
   ],
+  "scripts": {
+    "debug": "LEVEL=DEBUG NODE_ENV=test node app.js",
+    "info": "LEVEL=INFO NODE_ENV=test node app.js",
+    "migrate-latest": "knex --esm --knexfile knexfile.cjs migrate:latest"
+  },
   "license": "ISC",
   "dependencies": {
-    "bluebird": "^3.7.2",
     "body-parser": "^1.20.1",
     "chalk": "^5.2.0",
     "date-fns": "^2.29.3",
@@ -31,5 +35,8 @@
     "node-fetch": "^3.3.0",
     "sqlite3": "^5.1.5",
     "strftime": "^0.10.1"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

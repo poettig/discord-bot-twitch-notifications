@@ -1,5 +1,4 @@
 import * as loglib from "./log.js"
-import BluebirdPromise from "bluebird"
 import qs from "node:querystring"
 import fetch from "node-fetch"
 import config from "./config.json" assert { type: "json" }
@@ -79,12 +78,15 @@ export function apiRequest({
  * @returns {Promise<string>}
  */
 export function ensureToken() {
-    return BluebirdPromise.try(() => {
+    return new Promise((resolve, reject) => {
         // @TODO: implement token expiration handling
-        if (token) return token;
+        if (token) {
+            resolve(token);
+            return;
+        }
 
         log.debug('Requesting new OAuth token...');
-        return apiRequest({
+        apiRequest({
             endpoint: '/oauth2/token',
             noauth: true,
             payload: {
@@ -94,11 +96,16 @@ export function ensureToken() {
             },
             method: 'post',
             urlBase: 'https://id.twitch.tv',
-        }).then(({ access_token }) => {
-            token = access_token;
-            log.debug('Successfully got OAuth token.');
-            return token;
-        });
+        }).then(
+            ({ access_token }) => {
+                token = access_token;
+                log.debug('Successfully got OAuth token.');
+                resolve(token);
+            },
+            error => {
+                reject(`Failed to get OAuth2 token: ${error}`)
+            }
+        );
     });
 }
 
@@ -177,7 +184,7 @@ function getStreamsByKeywords(gameIds, keywords) {
  * @returns {Promise<Array<TwitchStream>>}
  */
 export function getStreamsByMetadata(gameIds, { tagIds, keywords }) {
-    return BluebirdPromise.all([
+    return Promise.all([
         getStreamsByTagId(gameIds, tagIds),
         getStreamsByKeywords(gameIds, keywords),
     ]).then(([ taggedStreams, kwStreams ]) => {
