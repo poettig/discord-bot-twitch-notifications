@@ -78,7 +78,7 @@ function checkStreams() {
 }
 
 function sendSpeedrunAdministrationMessage(message) {
-	Discord.sendMessage(message, false, "🏢speedrun-administration");
+	Discord.sendMessage(message, false, "src-administration");
 }
 
 function sendMessageWithRunInformation(run, prefix) {
