@@ -16,10 +16,11 @@ let loggedIn = false;
 
 client.on('ready', () => {
 	log.info(`Logged in as ${client.user.tag}`);
+	loggedIn = true;
 });
 
 client.login(config.discord.credentials.botToken).then(() => {
-	loggedIn = true;
+	log.debug("Login request to Discord completed, waiting for ready event...")
 });
 
 export function isLoggedIn() {
