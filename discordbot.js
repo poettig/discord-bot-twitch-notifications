@@ -29,12 +29,12 @@ export function isLoggedIn() {
 
 let failedLogins = 0;
 
-function reattemptLogin(err) {
+function reattemptLogin(error) {
 	failedLogins += 1;
 
 	if (failedLogins > 50) {
-		log.error('Too many failed logins or disconnections, shutting down', err);
-		throw err;
+		log.error('Too many failed logins or disconnections, shutting down', error);
+		throw error;
 	}
 
 	client.once('error', (err) => {

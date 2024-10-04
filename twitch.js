@@ -2,23 +2,26 @@ import * as loglib from "./log.js"
 import qs from "node:querystring"
 import fetch from "node-fetch"
 import config from "./config.json" assert { type: "json" }
+import {getRandomInt} from "./util.js";
 
 const URL_BASE = 'https://api.twitch.tv/helix';
 const log = loglib.createLogger("twitch", process.env.LEVEL_TWITCH);
 
-let token;
+let token = null;
+let tokenCreationRunning = false;
 
-export function apiRequest({
+export async function apiRequest({
     endpoint,
     payload = {},
     method = "GET",
     urlBase = URL_BASE,
     responseType = 'json',
     headers = {},
-    retries = 1,
-    noauth = false
+    noauth = false,
+    retry = false,
+    ratelimitedFor = 1,
+    attemptsWithAllowedFailures = 1
 }) {
-
     if (!noauth) {
         headers["Authorization"] = 'Bearer ' + token;
     }
@@ -27,25 +30,59 @@ export function apiRequest({
     const params = method.toUpperCase() === 'GET' ? `?${qs.stringify(payload)}` : '';
 
     log.debug(`API request to: ${urlBase}${endpoint}${params}`);
-    return fetch(`${urlBase}${endpoint}${params}`, {
+    return fetch(
+        `${urlBase}${endpoint}${params}`, {
         method,
         headers: compiledHeaders,
         body: method.toUpperCase() === 'POST' ? JSON.stringify(payload) : undefined,
-    }).then((res) => {
+    }).then(async (res) => {
         if (res.status === 401) {
-            // Token most likely expired. Get a new one as client-credentials tokens can't be refreshed.
-            token = null;
+            log.debug(`API request to ${urlBase}${endpoint}${params} was unauthorized.`);
 
-            if (retries === 0) {
-                log.error("API request failed with authentication failure.");
-                log.info(res);
+            if (retry) {
+               log.error("Got an 'unauthorized' error with a fresh token, something is wrong.");
                 process.exit(1);
             }
 
-            throw new Error();
+            // Token is invalid, refresh and try again.
+            await refreshToken();
+            return await apiRequest({
+                endpoint,
+                payload,
+                method,
+                urlBase,
+                responseType,
+                headers,
+                noauth,
+                retry: true,
+                ratelimitedFor: ratelimitedFor,
+                attemptsWithAllowedFailures: attemptsWithAllowedFailures,
+            });
+        } else if (res.status === 429) {
+            log.debug(`API request to ${urlBase}${endpoint}${params} was ratelimited.`);
+
+            // Linear backoff with 60 second cap (time for full restore of rate limit bucket)
+            const waitTime = Math.min(60, getRandomInt(5, 10) * ratelimitedFor);
+            log.warn(`Ratelimited by Twitch (${ratelimitedFor}x), waiting for ${waitTime}s before retrying.`);
+            await new Promise((resolve) => setTimeout(resolve, waitTime * 1000));
+            log.debug(`Done waiting for ratelimit to expire, starting retry ${ratelimitedFor}...`)
+            return await apiRequest({
+                endpoint,
+                payload,
+                method,
+                urlBase,
+                responseType,
+                headers,
+                noauth,
+                retry,
+                ratelimitedFor: ratelimitedFor + 1,
+                attemptsWithAllowedFailures: attemptsWithAllowedFailures,
+            });
         } else if (res.status !== 200) {
+            log.debug(`API request to ${urlBase}${endpoint}${params} failed with ${res.status}`)
             return res.status;
         } else {
+            log.debug(`API request to ${urlBase}${endpoint}${params} succeeded.`)
             log.debug(`Quota left: ${res.headers.get("Ratelimit-Remaining")}`);
             if (responseType === 'json') {
                 return res.json();
@@ -53,59 +90,68 @@ export function apiRequest({
                 return res.text();
             }
         }
-    }).then((value) => {
-        return value;
-    }, () => {
-        // Get new token and retry
-        log.info("OAuth token expired, getting a new one...");
-        token = null;
-        ensureToken().then(() => {
-            // Retry. Exit condition is "retries == 0" two thens above.
-            return apiRequest({
+    }, async (error) => {
+        if (attemptsWithAllowedFailures < 5 && (error.code === "ECONNRESET" || error.code === "ECONNREFUSED" || error.code === "ETIMEDOUT")) {
+            const waitTime = getRandomInt(5, 10) * (attemptsWithAllowedFailures);
+            log.warn(`Soft failure when requesting Twitch API (${attemptsWithAllowedFailures}x), waiting for ${waitTime}s before retrying.`);
+            await new Promise((resolve) => setTimeout(resolve, waitTime * 1000));
+            return await apiRequest({
                 endpoint,
                 payload,
                 method,
                 urlBase,
                 responseType,
+                retry,
                 headers,
-                retries: retries - 1
+                noauth,
+                ratelimitedFor: ratelimitedFor,
+                attemptsWithAllowedFailures: attemptsWithAllowedFailures + 1,
             });
-        });
+        }
+
+        // More than 5 attempts or other errors are critical
+        log.error(`Too many errors occured (attempts: ${attemptsWithAllowedFailures}) when requesting Twitch API: ${error}.`);
+        process.exit(1);
     });
 }
 
-/**
- * @returns {Promise<string>}
- */
-export function ensureToken() {
-    return new Promise((resolve, reject) => {
-        // @TODO: implement token expiration handling
-        if (token) {
-            resolve(token);
-            return;
+async function refreshToken() {
+    if (tokenCreationRunning) {
+        // Wait until creation is finished, then return
+        let counter = 1;
+        while (tokenCreationRunning) {
+            if (counter >= 10 && counter % 10 === 0) {
+                log.warn(`Waiting for token creation to finish since ${counter / 10}s already...`);
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
 
-        log.debug('Requesting new OAuth token...');
-        apiRequest({
-            endpoint: '/oauth2/token',
-            noauth: true,
-            payload: {
-                client_id: config.twitch.credentials.clientId,
-                client_secret: config.twitch.credentials.clientSecret,
-                grant_type: 'client_credentials',
-            },
-            method: 'post',
-            urlBase: 'https://id.twitch.tv',
-        }).then(
-            ({ access_token }) => {
-                token = access_token;
-                log.debug('Successfully got OAuth token.');
-                resolve(token);
-            },
-            error => {
-                reject(`Failed to get OAuth2 token: ${error}`)
-            }
-        );
+        return;
+    }
+
+    tokenCreationRunning = true;
+    log.debug('Requesting new OAuth token...');
+    await apiRequest({
+        endpoint: '/oauth2/token',
+        noauth: true,
+        payload: {
+            client_id: config.twitch.credentials.clientId,
+            client_secret: config.twitch.credentials.clientSecret,
+            grant_type: 'client_credentials',
+        },
+        method: 'post',
+        urlBase: 'https://id.twitch.tv',
+    }).then(
+        ({ access_token }) => {
+            token = access_token;
+            log.debug('Successfully got OAuth token.');
+        },
+        error => {
+            throw Error(`Failed to get OAuth2 token: ${error}`);
+        }
+    ).finally(() => {
+        tokenCreationRunning = false;
     });
 }
 
@@ -155,35 +201,18 @@ function getStreams(games = [], cursor, streams = []) {
         });
 }
 
-/**
- * 
- * @param {Array<string>} gameIds 
- * @param {Array<string>} tagIds
- * @returns {Promise<TwitchStream[]>}
- */
 function getStreamsByTagId(gameIds, tagIds) {
     return getStreams(gameIds)
         .then(streams => streams.filter(stream => stream.tag_ids && stream.tag_ids.some(id => tagIds.includes(id))));
 }
 
-/**
- * 
- * @param {Array<string>} gameIds 
- * @param {Array<string>} keywords
- * @returns {Promise<TwitchStream[]>}
- */
 function getStreamsByKeywords(gameIds, keywords) {
     return getStreams(gameIds)
         .then(streams => streams.filter(stream => stream.title && keywords.some(kw => stream.title.toLowerCase().includes(kw.toLocaleLowerCase()))));
 }
 
-/**
- * Exported alias for getStreamsByTagId
- * @param {Array<string>} gameIds
- * @param {{ tagIds: Array<string>, keywords: Array<string> }} options
- * @returns {Promise<Array<TwitchStream>>}
- */
 export function getStreamsByMetadata(gameIds, { tagIds, keywords }) {
+    log.debug('Getting twitch streams by metadata...')
     return Promise.all([
         getStreamsByTagId(gameIds, tagIds),
         getStreamsByKeywords(gameIds, keywords),

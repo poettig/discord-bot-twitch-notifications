@@ -26,17 +26,17 @@
   "license": "ISC",
   "dependencies": {
     "body-parser": "^1.20.3",
-    "chalk": "^5.2.0",
-    "date-fns": "^3.3.1",
-    "discord.js": "^14.7.1",
-    "knex": "^3.0.1",
-    "loglevel": "^1.8.1",
+    "chalk": "^5.3.0",
+    "date-fns": "^4.1.0",
+    "discord.js": "^14.16.3",
+    "knex": "^3.1.0",
+    "loglevel": "^1.9.2",
     "loglevel-plugin-prefix": "^0.8.4",
-    "node-fetch": "^3.3.0",
-    "sqlite3": "^5.1.5",
-    "strftime": "^0.10.1"
+    "node-fetch": "^3.3.2",
+    "sqlite3": "^5.1.7",
+    "strftime": "^0.10.3"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=18 <22"
   }
 }

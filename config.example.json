@@ -1,5 +1,4 @@
 {
-    "domain": "https://alerts.example.com",
     "store": {
         "client": "sqlite3",
         "connection": "./db.sqlite3",

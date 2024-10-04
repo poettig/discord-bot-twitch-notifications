@@ -1,11 +1,12 @@
 import * as loglib from "./log.js"
 import * as twitchClient from "./twitch.js"
-import {ensureToken} from "./twitch.js"
 import config from "./config.json" assert {type: "json"}
 import * as Stream from "./Stream.js"
 import * as Discord from "./discordbot.js"
 import db from "./connection.js"
 import fetch from "node-fetch"
+import {getRandomInt} from "./util.js";
+import {escapeMarkdown} from "discord.js";
 
 const log = loglib.createLogger("app", process.env.LEVEL_APP);
 const factorioGameID = "9d35xw1l";
@@ -39,12 +40,9 @@ function checkStreams() {
 	}
 
 	log.debug("Checking streams...");
-	return ensureToken().then(() => {
-		log.debug('Getting twitch streams by metadata...')
-		return twitchClient.getStreamsByMetadata(config.twitch.allowlist.gameIds, {
-			tagIds: config.twitch.allowlist.tagIds,
-			keywords: config.twitch.allowlist.keywords
-		});
+	return twitchClient.getStreamsByMetadata(config.twitch.allowlist.gameIds, {
+		tagIds: config.twitch.allowlist.tagIds,
+		keywords: config.twitch.allowlist.keywords
 	}).then((streams) => {
 		if (!streams.length) {
 			log.debug('no active streams found with your search configuration');
@@ -78,7 +76,7 @@ function checkStreams() {
 }
 
 function sendSpeedrunAdministrationMessage(message) {
-	Discord.sendMessage(message, false, "src-administration");
+	Discord.sendMessage(message, false, "src-admin-run-administration");
 }
 
 function sendMessageWithRunInformation(run, prefix) {
@@ -86,11 +84,11 @@ function sendMessageWithRunInformation(run, prefix) {
 
 	let runners = [];
 	run["players"]["data"].forEach((runner) => {
-		runners.push(getRunnerName(runner));
+		runners.push(escapeMarkdown(getRunnerName(runner)));
 	});
 
-	message += `${run["category"]["data"]["name"]} run`;
-	message += ` in ${run["times"]["primary"].substring(2)}`;
+	message += `${escapeMarkdown(run["category"]["data"]["name"])} run`;
+	message += ` in ${escapeMarkdown(run["times"]["primary"].substring(2))}`;
 	message += ` by ${runners.join(", ")}.\n`;
 	message += `Submission from ${run["submitted"]}\n`;
 	message += `Link: <${run["weblink"]}>\n`;
@@ -102,20 +100,23 @@ function fetchSRCUrl(pageUrl) {
 		log.debug(`Fetching ${pageUrl}...`)
 		fetch(pageUrl).then((response) => {
 			return response.json();
-		}).then((jsonData) => {
-			if (!jsonData) {
-				reject("Failed to fetch SRC json data");
-			}
+		}).then(
+			(jsonData) => {
+				if (!jsonData) {
+					reject("Failed to fetch SRC json data");
+				}
 
-			// Maximum number of requests per minute reached, retry after a bit.
-			if (jsonData.status === 420) {
-				setTimeout(() => fetchSRCUrl(pageUrl).then(resolve, reject), 10000);
-			}
+				// Maximum number of requests per minute reached, retry after a bit.
+				if ([420, 429].includes(jsonData.status)) {
+					setTimeout(() => fetchSRCUrl(pageUrl).then(resolve, reject), 10000);
+				}
 
-			resolve(jsonData);
-		}).catch((err) => {
-			reject(`Failed to fetch ${pageUrl}: ${err}`);
-		});
+				resolve(jsonData);
+			},
+			(err) => {
+				reject(`Failed to fetch ${pageUrl}: ${err}`);
+			}
+		);
 	});
 }
 
@@ -127,24 +128,24 @@ function checkTwitchVideoProof(run, videoId) {
 			id: videoId
 		}
 	}).then((data) => {
-		if (data === 404) {
+		if (data == null || !("data" in data)) {
+			throw new Error(`Got invalid answer for video with id ${videoId}`);
+		}
+
+		let data_inner = data["data"];
+
+		if (data_inner.length === 0) {
 			// The video is offline.
 			let prefix = "Found offline video proof (Twitch returned 404).\n";
 			sendMessageWithRunInformation(run, prefix);
 			return Promise.resolve();
 		}
 
-		if (data == null || !("data" in data)) {
-			throw `Got invalid answer for video with id ${videoId}`;
+		if (data_inner.length > 1) {
+			throw new Error("Twitch API returned more than one result for a video ID.");
 		}
 
-		data = data["data"];
-
-		if (data.length !== 1) {
-			throw "Twitch API didn't return a single result for a video ID.";
-		}
-
-		if (data[0]["type"] === "archive") {
+		if (data_inner[0]["type"] === "archive") {
 			let prefix = "Found run that has an auto-archived twitch VOD as proof.\n";
 			sendMessageWithRunInformation(run, prefix);
 			return Promise.resolve();
@@ -206,7 +207,7 @@ async function checkForNewRunners(run) {
 				continue;
 			}
 
-			let promise = fetchAllFromSrcUrl(link["uri"]).then((response) => {
+			let promise = fetchEntriesFromSRC(link["uri"]).then((response) => {
 				let runCount = 0;
 
 				response.forEach(run => {
@@ -215,25 +216,36 @@ async function checkForNewRunners(run) {
 					}
 				});
 
-				log.debug(`Unknown runner ${runnerName} (${runner["id"]}) submitted a run, announcing...`);
-				let message = `Previously unknown runner ${runnerName} submitted a run.\n`;
-				if (runCount === 1) {
-					message += "This is their first submission.\n"
-				} else {
-					message += `They submitted ${runCount} runs already.\n`
-				}
+				return db("runners").insert({
+					runner_id: runner["id"],
+					runner_name: runnerName
+				}).then(() => {
+					const escapedRunnerName = escapeMarkdown(runnerName)
+					log.info(`Unknown runner ${escapedRunnerName} (${runner["id"]}) submitted a run, announcing...`);
+					let message = `Previously unknown runner ${escapedRunnerName} submitted a run.\n`;
+					if (runCount === 1) {
+						message += "This is their first submission.\n"
+					} else {
+						message += `They submitted ${runCount} runs already.\n`
+					}
 
-				if (runner["rel"] === "guest") {
-					message += "User is a guest runner and therefore has no speedrun.com profile.\n";
-					message += "Good luck finding them :upside_down:\n";
-				} else {
-					message += `Run link: <${run["weblink"]}>\n`
-					message += `User link: <${runner["weblink"]}>\n`;
-				}
+					if (runner["rel"] === "guest") {
+						message += "User is a guest runner and therefore has no speedrun.com profile.\n";
+						message += "Good luck finding them :upside_down:\n";
+					} else {
+						message += `Run link: <${run["weblink"]}>\n`
+						message += `User link: <${runner["weblink"]}>\n`;
+					}
 
-				sendSpeedrunAdministrationMessage(message);
+					return sendSpeedrunAdministrationMessage(message);
+				}, (error) => {
+					// Ignore unique contraint fails, that just means that the entry was created while fetching the runs
+					if (error.errno === 19 && error.message.includes("UNIQUE constraint failed")) {
+						return;
+					}
 
-				return db("runners").insert({runner_id: runner["id"], runner_name: runnerName});
+					throw error;
+				});
 			});
 
 			promises.push(promise);
@@ -243,66 +255,107 @@ async function checkForNewRunners(run) {
 	return Promise.all(promises);
 }
 
-function processSpeedrun(run) {
+async function processSpeedrun(run) {
+	const runSubmitDateString = new Date(run["submitted"]).toLocaleString();
+
 	let videoProofPromise = checkVideoProof(run);
 	let newRunnerPromise = checkForNewRunners(run);
-	return Promise.all([videoProofPromise, newRunnerPromise]).then(() => {
-		// Mark the run as processed.
-		return db("src").update({latest: new Date(run["submitted"]).getTime() / 1000}).then();
-	});
+
+	return Promise.all([videoProofPromise, newRunnerPromise]).then(
+		async () => {
+			// Mark the run as processed.
+			return await db("src").update({
+				latest: new Date(run["submitted"]).getTime() / 1000
+			}).then(
+				() => {
+					log.info(`Processed run ${run["id"]} (${runSubmitDateString}).`);
+					return true;
+				},
+				(error) => {
+					log.info(`Processed run ${run["id"]} (${runSubmitDateString}), but failed to update latest processed run marker: ${error}.`);
+					return false;
+				}
+			);
+		},
+		(error) => {
+			log.error(`Failed to process run ${run["id"]} (${runSubmitDateString}): ${error}.`);
+			return false;
+		}
+	);
 }
 
-async function processSpeedruns(runs) {
-	if (runs.length === 0) {
-		log.debug("No new speedruns to process.");
-		return;
+async function fetchPageFromSRC(chunkUrl, stopCondition) {
+	let jsonData = await fetchSRCUrl(chunkUrl);
+
+	const entries = []
+	const page = {
+		entries,
+		nextPage: null
+	};
+
+	// Ratelimited
+	if (jsonData.status === 420) {
+		// Got ratelimited, retry later
+		const waitTime = getRandomInt(5, 10);
+		log.warn(`Ratelimited by speedrun.com, waiting ${waitTime}s before retrying.`)
+		await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
+		return await fetchPageFromSRC(chunkUrl, stopCondition);
 	}
 
-	log.info(`Processing ${runs.length} new speedrun${runs.length === 1 ? "" : "s"}.`);
-
-	// Process all runs in the fetched chunk.
-	for (let run of runs.reverse()) {
-		await processSpeedrun(run);
-		log.info(`Processed run ${run["id"]} from ${new Date(run["submitted"])}.`);
+	if (jsonData["data"] == null) {
+		throw Error(`Got page without data: ${jsonData}`);
 	}
+
+	for (let run of jsonData["data"]) {
+		if (typeof stopCondition === "function" && stopCondition(run)) {
+			return page;
+		}
+
+		entries.push(run);
+	}
+
+	if (!("pagination" in jsonData)) {
+		return page;
+	}
+
+	for (let link of jsonData["pagination"]["links"]) {
+		if (link["rel"] === "next") {
+			page.nextPage = link["uri"];
+		}
+	}
+
+	return page;
 }
 
-function fetchAllFromSrcUrl(url, filterFunction) {
-	let runs = [];
+async function fetchEntriesFromSRC(url, stopCondition) {
+	let nextPage = url;
+	const entries = [];
 
-	function fetchChunk(chunkUrl) {
-		return fetchSRCUrl(chunkUrl).then((jsonData) => {
-			for (let run of jsonData["data"]) {
-				if (typeof filterFunction === "function" && filterFunction(run)) {
-					// We reached an already processed run, stop fetching more runs.
-					return runs;
-				}
-
-				runs.push(run);
-			}
-
-			if (!("pagination" in jsonData)) {
-				// We are done, no more runs left. Resolve promise.
-				return runs;
-			}
-
-			for (let link of jsonData["pagination"]["links"]) {
-				if (link["rel"] === "next") {
-					return fetchChunk(link["uri"]);
-				}
-			}
-
-			// We are done, no more runs left. Resolve promise.
-			return runs;
+	while (nextPage) {
+		await fetchPageFromSRC(nextPage, stopCondition).then((page) => {
+			nextPage = page.nextPage;
+			entries.push(...page.entries);
 		});
 	}
 
-	return fetchChunk(url);
+	return entries;
 }
 
-function fetchAllUnprocessedSpeedruns(lastProcessedRunTimestamp) {
-	const URL = `https://www.speedrun.com/api/v1/runs?game=${factorioGameID}&orderby=submitted&direction=desc&embed=category,players`;
-	return fetchAllFromSrcUrl(URL, (run) => new Date(run["submitted"]).getTime() / 1000 <= lastProcessedRunTimestamp);
+async function processSpeedruns(runs) {
+	let successfullyProcessed = 0;
+	let failedToProcess = 0;
+
+	for (let [idx, run] of runs.entries()) {
+		log.debug(`Processing run ${idx + 1}/${runs.length}...`);
+		if (await processSpeedrun(run)) {
+			successfullyProcessed += 1;
+		} else {
+			failedToProcess += 1;
+		}
+	}
+
+	let allRuns = successfullyProcessed + failedToProcess;
+	log.info(`Processed ${allRuns} new speedrun${allRuns === 1 ? "" : "s"}, ${successfullyProcessed} succeeded, ${failedToProcess} failed.`);
 }
 
 function checkSpeedruns() {
@@ -321,26 +374,42 @@ function checkSpeedruns() {
 			return row["latest"];
 		});
 
-	let tokenPromise = twitchClient.ensureToken();
-
-	return Promise.all([dbPromise, tokenPromise]).then((results) => {
-		return fetchAllUnprocessedSpeedruns(results[0]);
-	}).then(processSpeedruns);
+	return dbPromise.then((lastProcessedRunTimestamp) => {
+		log.info("Fetching all unprocessed runs...");
+		return fetchEntriesFromSRC(
+			`https://www.speedrun.com/api/v1/runs?game=${factorioGameID}&orderby=submitted&direction=desc&embed=category,players`,
+			(run) => new Date(run["submitted"]).getTime() / 1000 <= lastProcessedRunTimestamp
+		).then((runs) => {
+			// Runs are fetched from newest to oldest, need to reverse the list
+			log.info(`Processing ${runs.length} unprocessed runs...`);
+			return processSpeedruns(runs.toReversed());
+		});
+	});
 }
 
 function startMonitor(functionToMonitor, interval) {
-	let handler = null;
+	let running = false;
 
 	let monitor = () => {
-		functionToMonitor().catch((error) => {
-			log.error("Rejection caught in monitor function, closing program with failure state...")
-			log.error(error);
-			process.exit(1);
-		})
+		if (running) {
+			log.warn(`Monitor ${functionToMonitor.name} is already running, skipping...`);
+			return;
+		}
+
+		running = true;
+		functionToMonitor()
+			.then(() => {
+				running = false;
+			})
+			.catch((error) => {
+				log.error(`Rejection caught in monitor ${functionToMonitor.name}, closing program with failure state...`)
+				log.error(error);
+				process.exit(1);
+			});
 	}
 
 	log.info(`Starting monitor ${functionToMonitor.name} with interval ${interval}.`)
-	handler = setInterval(monitor, interval);
+	setInterval(monitor, interval);
 	monitor();
 }
 
