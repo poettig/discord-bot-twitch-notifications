@@ -9,7 +9,6 @@ import {getRandomInt} from "./util.js";
 import {escapeMarkdown} from "discord.js";
 
 const log = loglib.createLogger("app", process.env.LEVEL_APP);
-const factorioGameID = "9d35xw1l";
 
 function validateStreams(streams) {
 	return Promise.all(streams.map(async (twitchStream) => {
@@ -193,12 +192,12 @@ async function checkForNewRunners(run) {
 		if (runner["rel"] === "guest") {
 			// Do not process guest runners as there is no way to contact them and they cannot submit runs themselves.
 			// Therefore, there is no need to check if they got their first ever submission right - someone with an account has to submit it.
-			log.debug(`Runner ${runnerName} (${runner['id']}) is a guest, can't progress.`)
+			log.debug(`[${run["game"]}] Runner ${runnerName} (${runner['id']}) is a guest, can't progress.`)
 			continue;
 		}
 
 		if (await checkIfKnownRunner(runner)) {
-			log.debug(`${runnerName} (${runner["id"]}) is already known, skipping...`);
+			log.debug(`[${run["game"]}] ${runnerName} (${runner["id"]}) is already known, skipping...`);
 			continue;
 		}
 
@@ -210,8 +209,9 @@ async function checkForNewRunners(run) {
 			let promise = fetchEntriesFromSRC(link["uri"]).then((response) => {
 				let runCount = 0;
 
-				response.forEach(run => {
-					if (run["game"] === factorioGameID) {
+				response.forEach(runOfRunner => {
+					// Runners can run multiple games which are all returned when requesting the "runs" URL of a runner object
+					if (runOfRunner["game"] === run["game"]) {
 						runCount++;
 					}
 				});
@@ -219,14 +219,16 @@ async function checkForNewRunners(run) {
 				return db("runners").insert({
 					runner_id: runner["id"],
 					runner_name: runnerName
-				}).then(() => {
+				}).then(async () => {
 					const escapedRunnerName = escapeMarkdown(runnerName)
-					log.info(`Unknown runner ${escapedRunnerName} (${runner["id"]}) submitted a run, announcing...`);
-					let message = `Previously unknown runner ${escapedRunnerName} submitted a run.\n`;
+					const gameName = (await fetchSRCUrl(`https://www.speedrun.com/api/v1/games/${run["game"]}`))["data"]["names"]["international"];
+
+					log.info(`[${run["game"]}] Unknown runner ${escapedRunnerName} (${runner["id"]}) submitted a run, announcing...`);
+					let message = `Previously unknown runner **${escapedRunnerName}** submitted a run for **${gameName}**.\n`;
 					if (runCount === 1) {
-						message += "This is their first submission.\n"
+						message += "This is their first submission for this game.\n"
 					} else {
-						message += `They submitted ${runCount} runs already.\n`
+						message += `They submitted ${runCount} runs for this game already.\n`
 					}
 
 					if (runner["rel"] === "guest") {
@@ -268,17 +270,17 @@ async function processSpeedrun(run) {
 				latest: new Date(run["submitted"]).getTime() / 1000
 			}).then(
 				() => {
-					log.info(`Processed run ${run["id"]} (${runSubmitDateString}).`);
+					log.info(`[${run["game"]}] Processed run ${run["id"]} (${runSubmitDateString}).`);
 					return true;
 				},
 				(error) => {
-					log.info(`Processed run ${run["id"]} (${runSubmitDateString}), but failed to update latest processed run marker: ${error}.`);
+					log.info(`[${run["game"]}] Processed run ${run["id"]} (${runSubmitDateString}), but failed to update latest processed run marker: ${error}.`);
 					return false;
 				}
 			);
 		},
 		(error) => {
-			log.error(`Failed to process run ${run["id"]} (${runSubmitDateString}): ${error}.`);
+			log.error(`[${run["game"]}] Failed to process run ${run["id"]} (${runSubmitDateString}): ${error}.`);
 			return false;
 		}
 	);
@@ -346,7 +348,7 @@ async function processSpeedruns(runs) {
 	let failedToProcess = 0;
 
 	for (let [idx, run] of runs.entries()) {
-		log.debug(`Processing run ${idx + 1}/${runs.length}...`);
+		log.debug(`[${run["game"]}] Processing run ${idx + 1}/${runs.length}...`);
 		if (await processSpeedrun(run)) {
 			successfullyProcessed += 1;
 		} else {
@@ -355,19 +357,20 @@ async function processSpeedruns(runs) {
 	}
 
 	let allRuns = successfullyProcessed + failedToProcess;
-	log.info(`Processed ${allRuns} new speedrun${allRuns === 1 ? "" : "s"}, ${successfullyProcessed} succeeded, ${failedToProcess} failed.`);
+	log.info(`[${runs.length > 0 ? runs[0]["game"] : "how are there no runs?"}] Processed ${allRuns} new speedrun${allRuns === 1 ? "" : "s"}, ${successfullyProcessed} succeeded, ${failedToProcess} failed.`);
 }
 
-function checkSpeedruns() {
-	log.debug("Checking runs on SRC...");
+function checkSpeedruns(srcGameId) {
+	log.debug(`[${srcGameId}] Checking runs on SRC...`);
 
 	let dbPromise = db("src")
 		.select()
+		.where("game_id", srcGameId)
 		.orderBy("internal_id", "desc")
 		.first()
-		.then((row) => {
+		.then(async (row) => {
 			if (row == null) {
-				db("src").insert({latest: 0}).then();
+				await db("src").insert({"latest": 0, "game_id": srcGameId});
 				return 0;
 			}
 
@@ -375,13 +378,17 @@ function checkSpeedruns() {
 		});
 
 	return dbPromise.then((lastProcessedRunTimestamp) => {
-		log.info("Fetching all unprocessed runs...");
+		log.info(`[${srcGameId}] Fetching all unprocessed runs...`);
 		return fetchEntriesFromSRC(
-			`https://www.speedrun.com/api/v1/runs?game=${factorioGameID}&orderby=submitted&direction=desc&embed=category,players`,
+			`https://www.speedrun.com/api/v1/runs?game=${srcGameId}&orderby=submitted&direction=desc&embed=category,players`,
 			(run) => new Date(run["submitted"]).getTime() / 1000 <= lastProcessedRunTimestamp
 		).then((runs) => {
+			if (runs.length === 0) {
+				return;
+			}
+
 			// Runs are fetched from newest to oldest, need to reverse the list
-			log.info(`Processing ${runs.length} unprocessed runs...`);
+			log.info(`[${srcGameId}] Processing ${runs.length} unprocessed runs...`);
 			return processSpeedruns(runs.toReversed());
 		});
 	});
@@ -421,6 +428,11 @@ let checkLoginHandler = setInterval(() => {
 		startMonitor(checkStreams, 30000);
 
 		// Check speedruns every 15 minutes
-		startMonitor(checkSpeedruns, 900000);
+		config.speedrundotcom.gameIds.forEach((gameId) => {
+			startMonitor(() => {
+				return checkSpeedruns(gameId)
+			}, 900000);
+		});
+
 	}
 }, 100);

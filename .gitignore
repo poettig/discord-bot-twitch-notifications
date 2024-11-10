@@ -1,6 +1,7 @@
 node_modules
 config.json
 out
-db.sqlite3
+*.sqlite3
+*.sqlite
 *.iml
 .idea

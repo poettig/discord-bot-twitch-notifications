@@ -26,6 +26,12 @@
             "clientSecret": "<TWITCH CLIENT SECRET HERE>"
         }
     },
+    "speedrundotcom": {
+        "gameIds": [
+            "9d35xw1l",
+            "ldewr7ed"
+        ]
+    },
     "discord": {
         "vipUsers": ["72692222"],
         "credentials": {
