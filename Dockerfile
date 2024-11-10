@@ -4,4 +4,5 @@ COPY ./ /src
 
 WORKDIR /src
 RUN npm ci
+RUN npm run migrate-latest
 CMD node app.js
