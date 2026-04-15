@@ -1,6 +1,6 @@
 import * as loglib from "./log.js"
 import * as twitchClient from "./twitch.js"
-import config from "./config.json" assert {type: "json"}
+import config from "./config.json" with {type: "json"}
 import * as Stream from "./Stream.js"
 import * as Discord from "./discordbot.js"
 import db from "./connection.js"

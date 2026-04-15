@@ -1,7 +1,7 @@
 import * as loglib from "./log.js"
 import qs from "node:querystring"
 import fetch from "node-fetch"
-import config from "./config.json" assert { type: "json" }
+import config from "./config.json" with { type: "json" }
 import {getRandomInt} from "./util.js";
 
 const URL_BASE = 'https://api.twitch.tv/helix';
@@ -203,7 +203,7 @@ function getStreams(games = [], cursor, streams = []) {
 
 function getStreamsByTagId(gameIds, tagIds) {
     return getStreams(gameIds)
-        .then(streams => streams.filter(stream => stream.tag_ids && stream.tag_ids.some(id => tagIds.includes(id))));
+        .then(streams => streams.filter(stream => stream.tag_ids && stream.tag_ids.some(id => tagIds.map(String).includes(String(id)))));
 }
 
 function getStreamsByKeywords(gameIds, keywords) {

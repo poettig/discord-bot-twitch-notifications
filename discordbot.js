@@ -1,5 +1,5 @@
 import * as loglib from "./log.js"
-import config from "./config.json" assert {type: "json"}
+import config from "./config.json" with {type: "json"}
 import Discord from "discord.js"
 
 const client = new Discord.Client({
@@ -14,7 +14,7 @@ const log = loglib.createLogger("discord", process.env.LEVEL_DISCORD);
 
 let loggedIn = false;
 
-client.on('ready', () => {
+client.on('clientReady', () => {
 	log.info(`Logged in as ${client.user.tag}`);
 	loggedIn = true;
 });
@@ -110,7 +110,7 @@ export function newStreamAnnouncement(data) {
 	welcomeMessage += `${display_name} is live!`;
 
 	let url = `https://www.twitch.tv/${username}`;
-	if (!config.twitch.allowlist.userIds.includes(data.user_id)) {
+	if (!config.twitch.allowlist.userIds.map(String).includes(String(data.user_id))) {
 		url = `<${url}>`;
 	}
 

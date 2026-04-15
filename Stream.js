@@ -1,6 +1,6 @@
 import * as loglib from "./log.js"
 import { differenceInMinutes, differenceInHours } from 'date-fns';
-import config from "./config.json" assert { type: "json" }
+import config from "./config.json" with { type: "json" }
 import db from "./connection.js"
 import * as discordBot from './discordbot.js'
 
@@ -18,12 +18,12 @@ async function announceStream(twitchStream) {
     }
 
     log.debug(`Checking for denylisted tags: '${twitchStream.tag_ids}'...`);
-    if (twitchStream.tag_ids && config.twitch.denylist.tagIds.some(tag => twitchStream.tag_ids.includes(tag))) {
+    if (twitchStream.tag_ids && config.twitch.denylist.tagIds.map(String).some(tag => twitchStream.tag_ids.map(String).includes(tag))) {
         log.info(`Denylisted tag found, suppressing alert for ${twitchStream.user_name} (${twitchStream.user_id}).`);
         return false;
     }
 
-    if (twitchStream.user_id && config.twitch.denylist.userIds.includes(twitchStream.user_id)) {
+    if (twitchStream.user_id && config.twitch.denylist.userIds.map(String).includes(String(twitchStream.user_id))) {
         log.info(`Denylisted user, suppressing alert for ${twitchStream.user_name} (${twitchStream.user_id}).`);
         return false;
     }
@@ -73,7 +73,7 @@ export async function updateStreamInDB(userID, userName, isLive, lastShoutOut, o
 }
 
 export function isAllowlisted(twitchStream) {
-    return config.twitch.allowlist.userIds.includes(twitchStream.user_id);
+    return config.twitch.allowlist.userIds.map(String).includes(String(twitchStream.user_id));
 }
 
 export async function streamGoneLive(twitchStream, dbRow) {

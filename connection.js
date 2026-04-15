@@ -4,5 +4,5 @@
  * just by requiring this connection module
  */
 import knex from "knex"
-import config from "./config.json" assert { type: "json" }
+import config from "./config.json" with { type: "json" }
 export default knex(config.store);
