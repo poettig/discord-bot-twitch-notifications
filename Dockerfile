@@ -1,4 +1,4 @@
-FROM docker.io/node:24-slim
+FROM docker.io/node:24-trixie-lim
 
 COPY ./ /src
 
