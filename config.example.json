@@ -1,6 +1,6 @@
 {
     "store": {
-        "client": "sqlite3",
+        "client": "better-sqlite3",
         "connection": "./db.sqlite3",
         "useNullAsDefault": true
     },
