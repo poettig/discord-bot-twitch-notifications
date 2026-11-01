@@ -1,7 +1,8 @@
 import * as loglib from "./log.js"
-import config from "./config.json" with {type: "json"}
+import loadConfig from "./config.cjs"
 import Discord from "discord.js"
 
+const config = loadConfig();
 const client = new Discord.Client({
 	intents: [
 		Discord.GatewayIntentBits.Guilds,

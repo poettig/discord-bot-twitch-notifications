@@ -1,6 +1,6 @@
 import * as loglib from "./log.js"
 import * as twitchClient from "./twitch.js"
-import config from "./config.json" with {type: "json"}
+import loadConfig from "./config.cjs"
 import * as Stream from "./Stream.js"
 import * as Discord from "./discordbot.js"
 import db from "./connection.js"
@@ -8,6 +8,7 @@ import fetch from "node-fetch"
 import {getRandomInt} from "./util.js";
 import {escapeMarkdown} from "discord.js";
 
+const config = loadConfig();
 const log = loglib.createLogger("app", process.env.LEVEL_APP);
 
 function validateStreams(streams) {

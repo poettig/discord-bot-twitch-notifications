@@ -12,14 +12,38 @@ npm install
 
 ### Setup
 For basic usage, you just need to initialize the local `sqlite` database.
-This can be done by invoking `knex --esm --knexfile knexfile.cjs migrate:latest`.
 
-Then, copy `config.example.json` to `config.json` and fill in the missing properties (or alter the existing ones).
+First, copy `config.example.json` to `config.json` and fill in the required properties (or alter the existing ones). The default configuration file is `config.json` in the project directory.
+
+To use a different configuration file, set `CONFIG_PATH`. Absolute paths are accepted; relative paths are resolved from the process working directory. The same setting is used by the application and database migrations:
+
+```sh
+CONFIG_PATH=/path/to/my-config.json npm run migrate-latest
+CONFIG_PATH=/path/to/my-config.json node app.js
+```
+
+Then initialize the database (if using the default configuration):
+
+```sh
+npm run migrate-latest
+```
+
+The Docker image's working directory is `/src`, so relative `CONFIG_PATH` values inside the container resolve from there. For a host configuration file, mount it and use its absolute container path:
+
+```sh
+docker run --rm \
+  -e CONFIG_PATH=/run/config/config.json \
+  -v "$PWD/config.json:/run/config/config.json:ro" \
+  your-image
+```
+
+The container command runs migrations and then starts the bot, and both use this configuration.
 
 ### Running
-To run with somewhat verbose but also readable output:
+To run in debug mode:
+
 ```
-DEBUG=speedbot:* node app.js
+npm run debug
 ```
 
 ### Adding the bot to Discord

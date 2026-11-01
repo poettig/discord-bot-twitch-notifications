@@ -1,6 +1,6 @@
 'use strict';
 
-const config = require("./config.json")
+const config = require("./config.cjs")()
 module.exports = {
   development: {
     client: 'better-sqlite3',

@@ -1,9 +1,10 @@
 import * as loglib from "./log.js"
 import { differenceInMinutes, differenceInHours } from 'date-fns';
-import config from "./config.json" with { type: "json" }
+import loadConfig from "./config.cjs"
 import db from "./connection.js"
 import * as discordBot from './discordbot.js'
 
+const config = loadConfig();
 const log = loglib.createLogger("stream", process.env.LEVEL_STREAM);
 
 function dbTable() {

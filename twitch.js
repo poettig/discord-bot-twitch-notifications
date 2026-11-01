@@ -1,9 +1,10 @@
 import * as loglib from "./log.js"
 import qs from "node:querystring"
 import fetch from "node-fetch"
-import config from "./config.json" with { type: "json" }
+import loadConfig from "./config.cjs"
 import {getRandomInt} from "./util.js";
 
+const config = loadConfig();
 const URL_BASE = 'https://api.twitch.tv/helix';
 const log = loglib.createLogger("twitch", process.env.LEVEL_TWITCH);
 
